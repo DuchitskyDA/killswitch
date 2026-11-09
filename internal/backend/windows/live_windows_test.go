@@ -172,12 +172,15 @@ func tieKinds(t *testing.T, b *Backend) []string {
 func TestLiveTie(t *testing.T) {
 	onRunner(t)
 	b := New()
-	foreign := foreignPermit(t)
+	foreign := foreignPermit(t) // наш уже есть: WFP понизит чужой до 0xFFFE
 	after := tieKinds(t, b)
+	foreign.Close()
 	if err := b.Remove(); err != nil {
 		t.Fatal(err)
 	}
-	applyConfig(t, b) // наш sublayer теперь создан после чужого
+	foreign = foreignPermit(t) // нашего нет: чужой получает 0xFFFF
+	defer foreign.Close()
+	applyConfig(t, b) // наш sublayer создан после чужого и понижен
 	before := tieKinds(t, b)
 	foreign.Close()
 	gone := tieKinds(t, b)

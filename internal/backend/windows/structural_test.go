@@ -24,10 +24,19 @@ func TestTieForeignBeforeOursIsLeak(t *testing.T) {
 	}
 }
 
+// WFP даёт созданному позже sublayer 0xFFFE: чужой после нашего — ниже нас.
 func TestTieForeignAfterOursIsFine(t *testing.T) {
-	subs := []SublayerInfo{{ID: oursID, Weight: 0xFFFF}, {ID: "{x}", Weight: 0xFFFF}}
+	subs := []SublayerInfo{{ID: "{x}", Weight: 0xFFFE}, {ID: oursID, Weight: 0xFFFF}}
 	if got := TieFindings(subs, oursID, []ForeignFilter{foreignPermitAll("{x}")}, ownOn(t)); len(got) != 0 {
 		t.Errorf("sublayer после нашего не пробивает: %+v", got)
+	}
+}
+
+// Наш создан после чужого 0xFFFF и получил 0xFFFE: чужой выше — утечка, где бы он ни стоял в перечислении.
+func TestTieOursDemotedIsLeak(t *testing.T) {
+	subs := []SublayerInfo{{ID: oursID, Weight: 0xFFFE}, {ID: "{x}", Weight: 0xFFFF}}
+	if got := TieFindings(subs, oursID, []ForeignFilter{foreignPermitAll("{x}")}, ownOn(t)); len(got) != 1 {
+		t.Errorf("чужой выше нашего — утечка: %+v", got)
 	}
 }
 

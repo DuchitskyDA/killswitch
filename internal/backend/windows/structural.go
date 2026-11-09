@@ -23,28 +23,34 @@ type ForeignFilter struct {
 	Conds          []Cond
 }
 
-// TieFindings — ничья 0xFFFF (решение владельца «б»): чужой sublayer с весом ≥ нашего, перечисленный раньше нашего,
-// с hard permit, который пускает не только наше. Подслой клиента (sing-box со случайным GUID) узнаётся по условиям
-// его permit: все значения одного поля — наши app-id, LUID туннеля или loopback (рев. 6).
+// TieFindings — ничья 0xFFFF (решение владельца «б»): чужой sublayer с весом ≥ фактического веса нашего и с hard
+// permit, который пускает не только наше. WFP не держит два sublayer с одним весом: созданный позже получает 0xFFFE
+// (дым windows-2025), поэтому «создан раньше нашего» видно по весам, а не по порядку перечисления.
+// Подслой клиента (sing-box со случайным GUID) узнаётся по условиям его permit: все значения одного поля — наши
+// app-id, LUID туннеля или loopback (рев. 6).
 func TieFindings(sublayers []SublayerInfo, ours string, foreign []ForeignFilter, own []Filter) []probe.StructuralFinding {
-	before := map[string]SublayerInfo{}
+	ourWeight := MaxWeight
 	for _, s := range sublayers {
 		if s.ID == ours {
-			break
+			ourWeight = s.Weight
 		}
-		if s.Weight >= MaxWeight {
-			before[s.ID] = s
+	}
+	above := map[string]SublayerInfo{}
+	for _, s := range sublayers {
+		if s.ID != ours && s.Weight >= ourWeight {
+			above[s.ID] = s
 		}
 	}
 	allowed := allowedValues(own)
 	var out []probe.StructuralFinding
 	for _, f := range foreign {
-		s, ok := before[f.Sublayer]
+		s, ok := above[f.Sublayer]
 		if !ok || !f.Permit || !f.Hard || restrictedTo(f.Conds, allowed) {
 			continue
 		}
 		out = append(out, probe.StructuralFinding{Kind: "wfp-tie", Detail: fmt.Sprintf(
-			"чужой sublayer %s %q (вес 0x%X, раньше нашего) — hard permit %q на %s пробивает наш block", s.ID, s.Name, s.Weight, f.Name, f.Layer)})
+			"чужой sublayer %s %q (вес 0x%X ≥ нашего 0x%X) — hard permit %q на %s пробивает наш block",
+			s.ID, s.Name, s.Weight, ourWeight, f.Name, f.Layer)})
 	}
 	return out
 }
