@@ -74,8 +74,13 @@ func (h *harness) deps() deps {
 		out:      &h.out,
 		err:      &h.err,
 		profiles: profiles.FS,
-		glob:     func(p string) ([]string, error) { return []string{p}, nil },
-		prober:   func(backend.Backend) probe.Prober { return h.prober },
+		glob: func(p string) ([]string, error) {
+			if p == wireguardExe {
+				return []string{p}, nil
+			}
+			return nil, nil
+		},
+		prober: func(backend.Backend) probe.Prober { return h.prober },
 	}
 }
 

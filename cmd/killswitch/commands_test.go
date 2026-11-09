@@ -96,7 +96,7 @@ func TestCheckWithoutTargetsIsInconclusive(t *testing.T) {
 func TestDetectFindsProfileByPath(t *testing.T) {
 	h := newHarness(t, baseConfig)
 	eq(t, h.run("detect"), exitOK)
-	eq(t, h.out.String(), "example: "+wireguardExe+"\n")
+	eq(t, h.out.String(), "example: "+wireguardExe+"\nwireguard: "+wireguardExe+"\n")
 }
 
 func TestStatusSnapshotFailureIsApplyError(t *testing.T) {
