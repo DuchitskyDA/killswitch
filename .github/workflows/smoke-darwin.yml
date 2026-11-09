@@ -34,8 +34,7 @@ jobs:
 
       - name: unit tests
         timeout-minutes: 5
-        # cmd/killswitch не здесь: TestBackendNotImplementedIsApplyError ядра ждёт стаб newBackend (интеграция волны 2)
-        run: go test ./internal/backend/darwin/
+        run: go test ./internal/backend/darwin/ ./cmd/killswitch/
 
       - name: build
         timeout-minutes: 5
@@ -43,9 +42,25 @@ jobs:
           sudo mkdir -p /private/tmp/ks-smoke/out
           go build -o killswitch ./cmd/killswitch
           go test -c -tags darwinlive -o live.test ./internal/backend/darwin
-          sudo cp killswitch live.test internal/backend/darwin/testdata/smoke/*.sh /private/tmp/ks-smoke/
+          sudo cp killswitch live.test internal/backend/darwin/testdata/smoke/*.sh internal/backend/darwin/testdata/smoke/*.py /private/tmp/ks-smoke/
           id -u | sudo tee /private/tmp/ks-smoke/runner_uid
           sudo chmod -R a+rX /private/tmp/ks-smoke
+
+      - name: fetch sing-box (pinned sha256)
+        timeout-minutes: 3
+        env:
+          SINGBOX_VERSION: '1.14.4'
+          SHA256_ARM64: '0d8c7f5ed5d587b0f1a5e9772a708ec3bfa4ac4c9329604b01d8d9c2ba406838'
+          SHA256_AMD64: 'eae86b9b033bba50b7c44ab719e4bfac0aca05efd28483390ed3aa510f32db25'
+        run: |
+          case "$(uname -m)" in arm64) arch=arm64; want=$SHA256_ARM64 ;; *) arch=amd64; want=$SHA256_AMD64 ;; esac
+          name="sing-box-$SINGBOX_VERSION-darwin-$arch"
+          curl -fsSL -o sb.tar.gz "https://github.com/SagerNet/sing-box/releases/download/v$SINGBOX_VERSION/$name.tar.gz"
+          got=$(shasum -a 256 sb.tar.gz | awk '{print $1}')
+          [ "$got" = "$want" ] || { echo "sha256 mismatch: $got"; exit 1; }
+          mkdir -p sb && tar -xzf sb.tar.gz -C sb
+          sudo cp "sb/$name/sing-box" /private/tmp/ks-smoke/sing-box
+          /private/tmp/ks-smoke/sing-box version
 
       - name: smoke
         timeout-minutes: 15

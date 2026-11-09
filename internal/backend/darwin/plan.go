@@ -65,6 +65,9 @@ func renderOn(p policy.Policy, e env.Env) string {
 	w.line("pass out quick inet proto udp from any port 68 to any port 67 no state")
 	w.line("pass out quick inet6 proto udp from any port 546 to any port 547 no state")
 	w.line("pass out quick inet6 proto icmp6 icmp6-type { neighbrsol, neighbradv, routersol, toobig } no state")
+	w.line("# пробы check: выше доверенных, DNS и LAN — отброс считается правилом своего порта-источника;")
+	w.line("# порты проб ниже эфемерных, обычный и доверенный трафик в них не попадает")
+	renderProbes(&w)
 	renderTrust(&w, p, e)
 	renderDNS(&w, p, e)
 	if p.LAN {
@@ -72,8 +75,6 @@ func renderOn(p policy.Policy, e env.Env) string {
 		w.line("pass out quick from any to %s no state", list(prefixStrings(policy.LANPrefixes)))
 		w.line("pass out quick from any to %s no state", list(prefixStrings(policy.LANMulticast)))
 	}
-	w.line("# пробы check: отброс считается правилом своего порта-источника")
-	renderProbes(&w, "")
 	w.line("# всё остальное")
 	w.line("block return out quick all")
 	return w.b.String()
@@ -157,17 +158,14 @@ func renderDNS(w *writer, p policy.Policy, e env.Env) {
 	if len(d.Listed) > 0 {
 		w.line("pass out quick proto { tcp udp } from any to %s port 53 no state", list(prefixStrings(d.Listed)))
 	}
-	w.line("# пробы check к порту 53: DNS-блок ниже отбросил бы их раньше общих правил проб")
-	renderProbes(w, " port 53")
 	w.line("block return out quick proto { tcp udp } from any to any port 53")
 }
 
-// renderProbes — block-правила портов-источников проб (рев. 5); label общий для пары «к 53» и «прочее»,
-// счётчики пакетов по label складываются.
-func renderProbes(w *writer, dstPort string) {
+// renderProbes — block-правила портов-источников проб с label (рев. 5): счётчик label — свидетельство отброса.
+func renderProbes(w *writer) {
 	for port := probe.SrcPortFirst; port <= probe.SrcPortLast; port++ {
 		for _, proto := range []string{"tcp", "udp"} {
-			w.line("block return out quick proto %s from any port %d to any%s label %q", proto, port, dstPort, probeLabel(proto, port))
+			w.line("block return out quick proto %s from any port %d to any label %q", proto, port, probeLabel(proto, port))
 		}
 	}
 }
