@@ -38,6 +38,10 @@ func systemDeps() deps {
 		prober: func(b backend.Backend) probe.Prober {
 			return probe.NetProber{Bind: health.Binder(b.BindControl), Timeout: health.Timeout}
 		},
+		in:       os.Stdin,
+		terminal: isTerminal,
+		admin:    isAdmin,
+		elevate:  elevateFunc,
 	}
 }
 
