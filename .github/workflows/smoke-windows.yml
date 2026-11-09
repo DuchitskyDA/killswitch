@@ -77,7 +77,10 @@ jobs:
               $code = $LASTEXITCODE
               Result $id (($code -eq 0) -eq $wantOk) "curl=$code want-ok=$wantOk"
           }
-          function Assert-Results { if ($script:Fails -gt 0) { throw "FAIL: $script:Fails" } }
+          function Assert-Results {
+              if ($script:Fails -gt 0) { throw "FAIL: $script:Fails" }
+              $global:LASTEXITCODE = 0 # ожидаемо упавшая проба не должна ронять шаг
+          }
           '@ | Set-Content "$env:KS\smoke.ps1" -Encoding utf8
 
       - name: Config (runner by app-id) and watchdog
