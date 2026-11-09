@@ -43,3 +43,10 @@ func TestFromMatchLoopbackAsReadFromWFP(t *testing.T) {
 		t.Errorf("loopback из WFP прочитан как %+v", got)
 	}
 }
+
+func TestFromMatchUnknownOpKeepsField(t *testing.T) {
+	m := &wf.Match{Field: wf.FieldALEAppID, Op: wf.MatchTypePrefix, Value: happApp}
+	if got := fromMatch(m); got.Raw == "" || got.Field != FieldAppID {
+		t.Errorf("непонятное условие app-id прочитано как %+v", got)
+	}
+}

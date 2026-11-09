@@ -108,8 +108,19 @@ func fromRule(r *wf.Rule) Filter {
 	return f
 }
 
+// fieldIDs — поля модели по GUID WFP: непонятное условие известного поля сохраняет поле (ИЛИ внутри поля).
+var fieldIDs = map[wf.FieldID]Field{
+	wf.FieldFlags:            FieldLoopback,
+	wf.FieldIPLocalInterface: FieldLocalIface,
+	wf.FieldALEAppID:         FieldAppID,
+	wf.FieldIPProtocol:       FieldProto,
+	wf.FieldIPLocalPort:      FieldLocalPort,
+	wf.FieldIPRemotePort:     FieldRemotePort,
+	wf.FieldIPRemoteAddress:  FieldRemoteAddr,
+}
+
 func fromMatch(m *wf.Match) Cond {
-	raw := Cond{Raw: m.String()}
+	raw := Cond{Field: fieldIDs[m.Field], Raw: m.String()}
 	op := Op("")
 	switch m.Op {
 	case wf.MatchTypeEqual:
