@@ -184,9 +184,9 @@ type fwpmFilter0 struct {
 	FilterConditions    *fwpmFilterCondition0
 	Action              fwpmAction0
 
-	// Only one of RawContext/ProviderContextKey must be set.
-	RawContext         uint64
-	ProviderContextKey windows.GUID
+	// killswitch: union { UINT64 rawContext; GUID providerContextKey } — 16 байт с выравниванием 8.
+	// Было два поля (24 байта): FilterID и EffectiveWeight читались со сдвигом на 8 байт.
+	ProviderContext [2]uint64
 
 	Reserved        *windows.GUID
 	FilterID        uint64
