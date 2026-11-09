@@ -32,17 +32,17 @@ func TestMatchIfacesEmptyAliasDoesNotMatchStar(t *testing.T) {
 }
 
 func TestWithLastKnownFallsBackToStored(t *testing.T) {
-	last := map[string][]netip.Addr{"vpn.example.org": {netip.MustParseAddr("203.0.113.2")}}
-	e := Env{ResolveErr: map[string]string{"vpn.example.org": "timeout"}}
+	last := map[string][]netip.Addr{"tunnel.example.org": {netip.MustParseAddr("203.0.113.2")}}
+	e := Env{ResolveErr: map[string]string{"tunnel.example.org": "timeout"}}
 	got, warns := WithLastKnown(e, last)
-	eq(t, got.Resolved["vpn.example.org"], last["vpn.example.org"])
+	eq(t, got.Resolved["tunnel.example.org"], last["tunnel.example.org"])
 	eq(t, len(warns), 1)
 }
 
 func TestWithLastKnownNoStoredAllowsNothing(t *testing.T) {
-	e := Env{Resolved: map[string][]netip.Addr{}, ResolveErr: map[string]string{"vpn.example.org": "nxdomain"}}
+	e := Env{Resolved: map[string][]netip.Addr{}, ResolveErr: map[string]string{"tunnel.example.org": "nxdomain"}}
 	got, warns := WithLastKnown(e, nil)
-	eq(t, len(got.Resolved["vpn.example.org"]), 0)
+	eq(t, len(got.Resolved["tunnel.example.org"]), 0)
 	eq(t, len(warns), 1)
 }
 

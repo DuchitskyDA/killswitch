@@ -16,7 +16,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), FileName)
 	want := State{Gen: 3, Mode: policy.ModeOff, BootID: "b1", PlanHash: "p", AppliedHash: "p",
 		Intent:    &Intent{Gen: 4, Target: policy.ModeOn, PlanHash: "q"},
-		LastKnown: map[string][]netip.Addr{"vpn.example.org": {netip.MustParseAddr("203.0.113.2")}},
+		LastKnown: map[string][]netip.Addr{"tunnel.example.org": {netip.MustParseAddr("203.0.113.2")}},
 		UpdatedAt: time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)}
 	noErr(t, Save(path, want))
 	got, err := Load(path)

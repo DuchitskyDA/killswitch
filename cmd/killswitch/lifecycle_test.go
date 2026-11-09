@@ -163,12 +163,12 @@ func TestOnWithCorruptStateStartsFresh(t *testing.T) {
 
 func TestOnKeepsLastKnownAddresses(t *testing.T) {
 	h := newHarness(t, baseConfig)
-	h.fb.Env.Resolved = map[string][]netip.Addr{"vpn.example.org": {netip.MustParseAddr("203.0.113.2")}}
+	h.fb.Env.Resolved = map[string][]netip.Addr{"tunnel.example.org": {netip.MustParseAddr("203.0.113.2")}}
 	h.run("on")
 	h.fb.Env.Resolved = nil
-	h.fb.Env.ResolveErr = map[string]string{"vpn.example.org": "timeout"}
+	h.fb.Env.ResolveErr = map[string]string{"tunnel.example.org": "timeout"}
 	noErr(t, h.reconcile(env.HealthUnknown))
-	eq(t, h.state().LastKnown["vpn.example.org"], []netip.Addr{netip.MustParseAddr("203.0.113.2")})
+	eq(t, h.state().LastKnown["tunnel.example.org"], []netip.Addr{netip.MustParseAddr("203.0.113.2")})
 }
 
 func TestFirstInstallFailedApplyIsCompletedByEnforce(t *testing.T) {

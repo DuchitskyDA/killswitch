@@ -33,16 +33,16 @@ func TestBuildDefaults(t *testing.T) {
 
 func TestBuildConfigReplacesProfileLists(t *testing.T) {
 	l := Layer{Interfaces: []string{"happ-*"}, Trust: []Trust{{Kind: KindUser, Value: "root"}}}
-	p := build(t, "[tunnel]\ninterfaces = [\"wg0\"]\n[[trust]]\nkind = \"user\"\nvalue = \"vpn\"\n", l)
+	p := build(t, "[tunnel]\ninterfaces = [\"wg0\"]\n[[trust]]\nkind = \"user\"\nvalue = \"tunnel\"\n", l)
 	eq(t, p.Tunnel.Interfaces, []string{"wg0"})
-	eq(t, p.Trust, []Trust{{Kind: KindUser, Value: "vpn", Destinations: DestAny}})
+	eq(t, p.Trust, []Trust{{Kind: KindUser, Value: "tunnel", Destinations: DestAny}})
 }
 
 func TestBuildProfileTrustDestinationsFollowStrict(t *testing.T) {
 	l := Layer{Interfaces: []string{"wg0"}, Trust: []Trust{{Kind: KindUser, Value: "root"}}}
-	p := build(t, "trust_mode = \"strict\"\n[tunnel]\nendpoints = [\"vpn.example.org:51820/udp\"]\n", l)
+	p := build(t, "trust_mode = \"strict\"\n[tunnel]\nendpoints = [\"tunnel.example.org:51820/udp\"]\n", l)
 	eq(t, p.Trust[0].Destinations, DestEndpoints)
-	eq(t, p.Tunnel.Endpoints, []Endpoint{{Host: "vpn.example.org", Port: 51820, Proto: ProtoUDP}})
+	eq(t, p.Tunnel.Endpoints, []Endpoint{{Host: "tunnel.example.org", Port: 51820, Proto: ProtoUDP}})
 	noErr(t, p.Validate(linux))
 }
 
