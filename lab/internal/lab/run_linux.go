@@ -181,7 +181,7 @@ func ipAddr(dev, cidr string) []string {
 
 func (l *Lab) setup() error {
 	l.printf("\n== топология\n")
-	for _, name := range []string{topo.ClientNS, topo.WanNS, topo.VPNNS, topo.InetNS} {
+	for _, name := range []string{topo.ClientNS, topo.WanNS, topo.PeerNS, topo.InetNS} {
 		n, err := nsguard.Create(l.ctx, name)
 		if err != nil {
 			return err
@@ -189,11 +189,11 @@ func (l *Lab) setup() error {
 		l.ns[name] = n
 		l.printf("ns %s inode %d\n", name, n.Ino)
 	}
-	cl, wan, vpn, inet := l.ns[topo.ClientNS], l.ns[topo.WanNS], l.ns[topo.VPNNS], l.ns[topo.InetNS]
+	cl, wan, peer, inet := l.ns[topo.ClientNS], l.ns[topo.WanNS], l.ns[topo.PeerNS], l.ns[topo.InetNS]
 	for _, p := range []struct {
 		wanIf, peerIf string
 		peer          *nsguard.NS
-	}{{topo.CaptureIf, topo.PhysIf, cl}, {"wv", "v0", vpn}, {"wi", "i0", inet}} {
+	}{{topo.CaptureIf, topo.PhysIf, cl}, {"wv", "v0", peer}, {"wi", "i0", inet}} {
 		if err := l.do(wan, "ip", "link", "add", p.wanIf, "type", "veth", "peer", "name", p.peerIf); err != nil {
 			return err
 		}
@@ -209,8 +209,8 @@ func (l *Lab) setup() error {
 			{"ip", "link", "set", "lo", "up"}, {"ip", "link", "set", topo.CaptureIf, "up"},
 			{"ip", "link", "set", "wv", "up"}, {"ip", "link", "set", "wi", "up"},
 			{"sysctl", "-qw", "net.ipv4.ip_forward=1", "net.ipv6.conf.all.forwarding=1"},
-			{"ip", "route", "add", topo.InnerV4.String(), "via", topo.VPNV4.String()},
-			{"ip", "-6", "route", "add", topo.InnerV6.String(), "via", topo.VPNV6.String()},
+			{"ip", "route", "add", topo.InnerV4.String(), "via", topo.PeerV4.String()},
+			{"ip", "-6", "route", "add", topo.InnerV6.String(), "via", topo.PeerV6.String()},
 		},
 		cl: {
 			ipAddr(topo.PhysIf, topo.ClientV4.String()+"/24"), ipAddr(topo.PhysIf, topo.ClientV6.String()+"/64"),
@@ -218,8 +218,8 @@ func (l *Lab) setup() error {
 			{"ip", "route", "add", "default", "via", topo.WanCV4.String(), "dev", topo.PhysIf, "metric", topo.PhysMetric},
 			{"ip", "-6", "route", "add", "default", "via", topo.WanCV6.String(), "dev", topo.PhysIf, "metric", topo.PhysMetric},
 		},
-		vpn: {
-			ipAddr("v0", topo.VPNV4.String()+"/25"), ipAddr("v0", topo.VPNV6.String()+"/64"),
+		peer: {
+			ipAddr("v0", topo.PeerV4.String()+"/25"), ipAddr("v0", topo.PeerV6.String()+"/64"),
 			{"ip", "link", "set", "lo", "up"}, {"ip", "link", "set", "v0", "up"},
 			{"sysctl", "-qw", "net.ipv4.ip_forward=1", "net.ipv6.conf.all.forwarding=1"},
 			{"ip", "route", "add", "default", "via", topo.WanVV4.String()},
@@ -232,14 +232,14 @@ func (l *Lab) setup() error {
 			{"ip", "-6", "route", "add", "default", "via", topo.WanIV6.String()},
 		},
 	}
-	for _, n := range []*nsguard.NS{wan, cl, vpn, inet} {
+	for _, n := range []*nsguard.NS{wan, cl, peer, inet} {
 		if err := l.seq(n, steps[n]...); err != nil {
 			return err
 		}
 	}
 	// link-local адреса проходят DAD: ждём, пока tentative не исчезнут, иначе v6-baseline будет плавать.
 	deadline := time.Now().Add(8 * time.Second)
-	for _, n := range []*nsguard.NS{wan, cl, vpn, inet} {
+	for _, n := range []*nsguard.NS{wan, cl, peer, inet} {
 		for {
 			out, err := n.Run(l.ctx, "ip", "-6", "addr", "show", "tentative")
 			if err != nil {
@@ -632,7 +632,7 @@ func (l *Lab) teardown() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	for _, name := range []string{topo.ClientNS, topo.VPNNS, topo.InetNS, topo.WanNS} {
+	for _, name := range []string{topo.ClientNS, topo.PeerNS, topo.InetNS, topo.WanNS} {
 		if n, ok := l.ns[name]; ok {
 			if err := n.Delete(ctx); err != nil {
 				l.printf("удаление %s: %v\n", name, err)
@@ -651,7 +651,7 @@ func randomKey() string {
 // tunnelRoutes — default клиента через туннель; сервер туннеля — через физику.
 func (l *Lab) tunnelRoutes(iface string) error {
 	return l.seq(l.ns[topo.ClientNS],
-		[]string{"ip", "route", "replace", topo.VPNV4.String() + "/32", "via", topo.WanCV4.String(), "dev", topo.PhysIf},
+		[]string{"ip", "route", "replace", topo.PeerV4.String() + "/32", "via", topo.WanCV4.String(), "dev", topo.PhysIf},
 		[]string{"ip", "route", "replace", "default", "dev", iface, "metric", topo.TunnelMetric},
 		[]string{"ip", "-6", "route", "replace", "default", "dev", iface, "metric", topo.TunnelMetric},
 	)
@@ -661,7 +661,7 @@ func (l *Lab) dropTunnelRoutes(iface string) {
 	cl := l.ns[topo.ClientNS]
 	cl.Run(l.ctx, "ip", "route", "del", "default", "dev", iface, "metric", topo.TunnelMetric)
 	cl.Run(l.ctx, "ip", "-6", "route", "del", "default", "dev", iface, "metric", topo.TunnelMetric)
-	cl.Run(l.ctx, "ip", "route", "del", topo.VPNV4.String()+"/32")
+	cl.Run(l.ctx, "ip", "route", "del", topo.PeerV4.String()+"/32")
 }
 
 func (l *Lab) waitFor(what string, d time.Duration, cond func() bool) error {
@@ -709,8 +709,8 @@ func (l *Lab) checkInner(err error) error {
 
 func (l *Lab) wireguard() *tunnel {
 	t := &tunnel{name: "wireguard", iface: "wg0",
-		endpoints: []Endpoint{{topo.VPNV4, topo.WGServerPort, "udp"}}}
-	cl, vpn := l.ns[topo.ClientNS], l.ns[topo.VPNNS]
+		endpoints: []Endpoint{{topo.PeerV4, topo.WGServerPort, "udp"}}}
+	cl, peer := l.ns[topo.ClientNS], l.ns[topo.PeerNS]
 	t.up = func() error {
 		cpriv, cpub, err := wgset.GenerateKeys()
 		if err != nil {
@@ -720,14 +720,14 @@ func (l *Lab) wireguard() *tunnel {
 		if err != nil {
 			return err
 		}
-		if err := l.do(vpn, "ip", "link", "add", "kswg-s", "type", "wireguard"); err != nil {
+		if err := l.do(peer, "ip", "link", "add", "kswg-s", "type", "wireguard"); err != nil {
 			return err
 		}
-		if err := l.wgset(vpn, wgset.Config{Iface: "kswg-s", PrivateKey: spriv, ListenPort: topo.WGServerPort,
+		if err := l.wgset(peer, wgset.Config{Iface: "kswg-s", PrivateKey: spriv, ListenPort: topo.WGServerPort,
 			Peers: []wgset.Peer{{PublicKey: cpub, Allowed: []string{"198.18.0.2/32", "2001:db8:ffff::2/128"}}}}); err != nil {
 			return err
 		}
-		if err := l.seq(vpn, ipAddr("kswg-s", "198.18.0.1/24"), ipAddr("kswg-s", "2001:db8:ffff::1/64"),
+		if err := l.seq(peer, ipAddr("kswg-s", "198.18.0.1/24"), ipAddr("kswg-s", "2001:db8:ffff::1/64"),
 			[]string{"ip", "link", "set", "kswg-s", "up"}); err != nil {
 			return err
 		}
@@ -736,7 +736,7 @@ func (l *Lab) wireguard() *tunnel {
 			return err
 		}
 		if err := l.wgset(cl, wgset.Config{Iface: "wg0", PrivateKey: cpriv, ListenPort: topo.WGClientPort,
-			Peers: []wgset.Peer{{PublicKey: spub, Endpoint: fmt.Sprintf("%s:%d", topo.VPNV4, topo.WGServerPort),
+			Peers: []wgset.Peer{{PublicKey: spub, Endpoint: fmt.Sprintf("%s:%d", topo.PeerV4, topo.WGServerPort),
 				Allowed: []string{"0.0.0.0/0", "::/0"}}}}); err != nil {
 			return err
 		}
@@ -763,16 +763,16 @@ func (l *Lab) wireguard() *tunnel {
 		}
 		l.dropTunnelRoutes("wg0")
 		cl.Run(l.ctx, "ip", "link", "del", "wg0")
-		vpn.Run(l.ctx, "ip", "link", "del", "kswg-s")
+		peer.Run(l.ctx, "ip", "link", "del", "kswg-s")
 	}
 	return t
 }
 
-// proxyTunnel — sing-box или xray: сервер в ksl-vpn, клиент с TUN в ksl-client.
+// proxyTunnel — sing-box или xray: сервер в ksl-peer, клиент с TUN в ksl-client.
 func (l *Lab) proxyTunnel(name, iface string, port uint16, bin string, tunAddrs []string) *tunnel {
 	t := &tunnel{name: name, iface: iface,
-		endpoints: []Endpoint{{topo.VPNV4, port, "tcp"}, {topo.VPNV4, port, "udp"}}}
-	cl, vpn := l.ns[topo.ClientNS], l.ns[topo.VPNNS]
+		endpoints: []Endpoint{{topo.PeerV4, port, "tcp"}, {topo.PeerV4, port, "udp"}}}
+	cl, peer := l.ns[topo.ClientNS], l.ns[topo.PeerNS]
 	var srvP, cliP *proc
 	t.up = func() error {
 		if _, err := os.Stat(bin); err != nil {
@@ -803,17 +803,17 @@ func (l *Lab) proxyTunnel(name, iface string, port uint16, bin string, tunAddrs 
 		if err := os.WriteFile(cliCfg, cli, 0o600); err != nil {
 			return err
 		}
-		if _, err := vpn.Run(l.ctx, check(srvCfg)...); err != nil {
+		if _, err := peer.Run(l.ctx, check(srvCfg)...); err != nil {
 			return fmt.Errorf("проверка конфига сервера: %w", err)
 		}
 		if _, err := cl.Run(l.ctx, check(cliCfg)...); err != nil {
 			return fmt.Errorf("проверка конфига клиента: %w", err)
 		}
-		if srvP, err = l.startBin(name+"-server", vpn, run(srvCfg)...); err != nil {
+		if srvP, err = l.startBin(name+"-server", peer, run(srvCfg)...); err != nil {
 			return err
 		}
 		if err := l.waitFor(name+" сервер слушает", 10*time.Second, func() bool {
-			out, _ := vpn.Run(l.ctx, "ss", "-Hltn", fmt.Sprintf("sport = :%d", port))
+			out, _ := peer.Run(l.ctx, "ss", "-Hltn", fmt.Sprintf("sport = :%d", port))
 			return strings.TrimSpace(out) != ""
 		}); err != nil {
 			return l.withLog(err, name+"-server")

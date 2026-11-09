@@ -7,7 +7,7 @@
 ## Топология
 
 ```
-ksl-client ── c0 ═══ wc ── ksl-wan ── wv ═══ v0 ── ksl-vpn   (серверы туннелей)
+ksl-client ── c0 ═══ wc ── ksl-wan ── wv ═══ v0 ── ksl-peer  (серверы туннелей)
 198.51.100.2         (маршрутизатор,   └─ wi ═══ i0 ── ksl-inet  («интернет»-хост и получатель)
 2001:db8:c::2         захват на wc)                  203.0.113.130, 2001:db8:b::2
 ```
@@ -67,9 +67,30 @@ KSL_HOST=root@<host> TUNNELS=wireguard KEEP=1 bash lab/run-remote.sh
 Коды выхода `kslab`: 0 — критерий выполнен, 1 — не выполнен или ошибка, 2 — защита хоста отказала. Выход 2 бывает, например, когда
 цель — корневой ns: `kslab nsexec --ns-path /proc/1/ns/net -- …`.
 
-Тесты без root и Linux: `cd lab && go test ./...`. На Windows с антивирусом запуск `lab.test.exe` из временного каталога Go
-бывает запрещён («Access is denied»); тогда `go test -c -o <свой каталог>/lab.test.exe ./internal/lab` и запуск этого файла. Из корня `go test ./lab/...` заработает, когда ks-core создаст корневой go.mod;
-`lab/go.mod` временный.
+Тесты без root и Linux: `go test ./lab/...` из корня (lab — часть корневого модуля). На Windows с антивирусом запуск `lab.test.exe`
+из временного каталога Go бывает запрещён («Access is denied»); тогда `go test -c -o <свой каталог>/lab.test.exe ./lab/internal/lab`
+и запуск этого файла. Тест `lab/internal/probe` слушает только loopback.
+
+## Приёмка против настоящего killswitch
+
+```
+KSL_HOST=root@<host> KSL_SERVICES="a.service b.service" bash lab/run-accept.sh               # wireguard, sing-box, sing-box-ar, xray
+KSL_HOST=root@<host> CLIENTS=xray OUT=<каталог логов> KEEP=1 bash lab/run-accept.sh
+```
+
+`kslab accept --client <c>` прогоняет живые сценарии эпика 1–9, 10 (enforce возвращает снятую таблицу), два сценария ревизии 6
+(прямой маршрут клиента в strict, «зомби-туннель» для `dns.mode = tunnel-up`) и открытые вопросы ks-linux (а)–(г). Каждый клиент —
+свой вызов под scope (`-p Delegate=yes`: доверенный cgroup xray — дочерний cgroup своего scope) со свежей топологией.
+
+- `killswitch` (linux/amd64 из корня) работает только в `ksl-client` и в mount ns держателя (`ksl-mnt`): tmpfs поверх `/var/lib`,
+  `/run`, `/etc/systemd/system`, свой `/run/systemd/resolve/resolv.conf` (резолвер — LAN-хост) и свой boot id (bind-mount поверх
+  `/proc/sys/kernel/random/boot_id`). Каждый запуск идёт через `kslab ksexec`: сверка inode обоих ns, statfs трёх каталогов и
+  заглушка `systemctl` в PATH (`stub/systemctl` пишет вызовы и меняет ссылки только в tmpfs) — иначе выход 2.
+- LAN: 192.168.77.0/24 и fd77::/64 на линии c0 ↔ wc, HTTP и DNS «LAN-хоста» слушает ksl-wan.
+- Пробы «программы» идут от uid 65534 (профили доверяют root); сверка ns — от root до понижения прав.
+- Сценарий 7 — перезапуск ns: ksl-client пересоздаётся, boot id меняется, выполняется ExecStart раннего юнита из tmpfs, затем
+  enforce из копии бинарника. Сценарий 8: `stub-kill/nft` убивает killswitch на загрузке таблицы (после `nft -c`).
+- Итог — `run-<c>/results.json` и `report.txt`; `kslab summary */results.json` сводит таблицу сценарий × клиент × v4/v6.
 
 ## Что показал спайк (для ks-linux и ks-lab)
 
@@ -80,3 +101,18 @@ KSL_HOST=root@<host> TUNNELS=wireguard KEEP=1 bash lab/run-remote.sh
   но реальная утечка на такой порт не станет LEAK — матрица `check` должна опираться на порты с живым получателем.
 - freedom в xray 26.x для shadowsocks, vless и подобных входов по умолчанию блокирует geoip:private, а туда входит TEST-NET-3.
   Серверу лаборатории нужен `finalRules: allow` на подсеть «интернета».
+
+## Что показала приёмка (2026-11-09, ядро 6.17, nft 1.0.9, sing-box 1.14.4, xray 26.10.21)
+
+- WireGuard (fwmark 0xca6c, профиль wireguard) и sing-box (TUN tun0, профиль sing-box) — все сценарии PASS по v4 и v6.
+  xray (свой TUN, доверие cgroup) — PASS, кроме вопроса (а).
+- (а) Метка доверенного cgroup живёт на записи conntrack: чужой процесс с тем же 5-кортежем UDP проходит к endpoint, пока запись
+  жива. Кандидат правки, проверенный вставкой в таблицу внутри ns: в output на метку — переход в цепочку
+  `socket cgroupv2 level N "<путь>" return; meta skuid >= 0 drop`. Сравнение `socket cgroupv2 … != "<путь>"` не годится: для сокета
+  в cgroup мельче уровня N выражение не вычисляется и правило не срабатывает.
+- (б) sing-box auto_redirect: TCP через сокет, привязанный к TUN, не проходит. check даёт INCONCLUSIVE (код 5), проверка здоровья
+  не поднимается, и `tunnel-up` не закрывает DNS к LAN. Прямые TCP-пробы redirect перехватывает даже с привязкой к c0, поэтому
+  прямые пробы стенда для sing-box-ar идут от uid 65533 из `exclude_uid` клиента. DNS по TCP через sing-box с auto_redirect не
+  отвечает и без killswitch.
+- WireGuard без fwmark в strict не подключается (решение «Оставить закрытым»); с fwmark — подключается.
+- OpenVPN на стенде нет — не проверен.

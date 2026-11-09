@@ -185,3 +185,100 @@ func SelfCheck(expected uint64) error {
 	}
 	return CheckTarget(self, root, expected)
 }
+
+// RootMountIno — inode mount namespace процесса 1, то есть хоста.
+func RootMountIno() (uint64, error) { return inoPath("/proc/1/ns/mnt") }
+
+// MountNS — приватный mount namespace держателя лаборатории (tmpfs поверх IsolatedDirs).
+// Как и NS, держится дескриптором: команды входят именно в него.
+type MountNS struct {
+	Ino uint64
+	f   *os.File
+}
+
+// OpenMount открывает mount ns по пути (/proc/<pid>/ns/mnt) и отказывает, если это mount ns хоста или свой.
+func OpenMount(path string) (*MountNS, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	m := &MountNS{f: f}
+	if m.Ino, err = inoFile(f); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("%w: %v", ErrUnknown, err)
+	}
+	if err := m.check(0); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return m, nil
+}
+
+func (m *MountNS) check(expected uint64) error {
+	root, err := RootMountIno()
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnknown, err)
+	}
+	self, err := inoPath("/proc/self/ns/mnt")
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnknown, err)
+	}
+	if err := CheckMountTarget(m.Ino, root, expected); err != nil {
+		return err
+	}
+	return CheckMountTarget(m.Ino, self, expected)
+}
+
+// Verify сверяет inode дескриптора с записанным и с mount ns хоста.
+func (m *MountNS) Verify() error {
+	fi, err := inoFile(m.f)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnknown, err)
+	}
+	if fi != m.Ino {
+		return fmt.Errorf("%w: mount ns ждали %d, есть %d", ErrChanged, m.Ino, fi)
+	}
+	return m.check(m.Ino)
+}
+
+// Close закрывает дескриптор.
+func (m *MountNS) Close() error { return m.f.Close() }
+
+// CmdIn готовит команду внутри network ns n и mount ns m; перед этим сверяет оба.
+func (n *NS) CmdIn(ctx context.Context, m *MountNS, argv ...string) (*exec.Cmd, error) {
+	if err := n.Verify(); err != nil {
+		return nil, fmt.Errorf("%s: %w", n.Name, err)
+	}
+	if err := m.Verify(); err != nil {
+		return nil, err
+	}
+	args := append([]string{"--net=/proc/self/fd/3", "--mount=/proc/self/fd/4", "--"}, argv...)
+	cmd := exec.CommandContext(ctx, "nsenter", args...)
+	cmd.ExtraFiles = []*os.File{n.f, m.f}
+	return cmd, nil
+}
+
+// SelfCheckMount — проверка изнутри: процесс не в mount ns хоста и в том, что ждали.
+func SelfCheckMount(expected uint64) error {
+	self, err := inoPath("/proc/self/ns/mnt")
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnknown, err)
+	}
+	root, err := RootMountIno()
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnknown, err)
+	}
+	if expected == 0 {
+		return fmt.Errorf("%w: не передан --expect-mnt", ErrUnknown)
+	}
+	return CheckMountTarget(self, root, expected)
+}
+
+// IsTmpfs — каталог — точка tmpfs (statfs).
+func IsTmpfs(dir string) (bool, error) {
+	var st unix.Statfs_t
+	if err := unix.Statfs(dir, &st); err != nil {
+		return false, err
+	}
+	return st.Type == unix.TMPFS_MAGIC, nil
+}

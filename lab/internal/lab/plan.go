@@ -71,7 +71,7 @@ func NaivePolicy(tunIface string, endpoints []Endpoint) string {
 	return b.String()
 }
 
-// SingBoxConfigs — сервер (ksl-vpn) и клиент (ksl-client) sing-box: TUN → shadowsocks 2022 → direct.
+// SingBoxConfigs — сервер (ksl-peer) и клиент (ksl-client) sing-box: TUN → shadowsocks 2022 → direct.
 func SingBoxConfigs(password string) (server, client []byte, err error) {
 	srv := map[string]any{
 		"log": map[string]any{"level": "warn", "timestamp": true},
@@ -90,7 +90,7 @@ func SingBoxConfigs(password string) (server, client []byte, err error) {
 			"auto_route": false,
 		}},
 		"outbounds": []any{map[string]any{
-			"type": "shadowsocks", "tag": "ss-out", "server": topo.VPNV4.String(), "server_port": topo.SingBoxPort,
+			"type": "shadowsocks", "tag": "ss-out", "server": topo.PeerV4.String(), "server_port": topo.SingBoxPort,
 			"method": topo.ProxyMethod, "password": password, "bind_interface": topo.PhysIf,
 		}},
 		"route": map[string]any{"final": "ss-out"},
@@ -128,7 +128,7 @@ func XrayConfigs(password string) (server, client []byte, err error) {
 		"outbounds": []any{map[string]any{
 			"protocol": "shadowsocks", "tag": "ss-out",
 			"settings": map[string]any{"servers": []any{map[string]any{
-				"address": topo.VPNV4.String(), "port": topo.XrayPort, "method": topo.ProxyMethod, "password": password,
+				"address": topo.PeerV4.String(), "port": topo.XrayPort, "method": topo.ProxyMethod, "password": password,
 			}}},
 			"streamSettings": map[string]any{"sockopt": map[string]any{"interface": topo.PhysIf}},
 		}},
