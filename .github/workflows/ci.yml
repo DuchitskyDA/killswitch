@@ -4,7 +4,7 @@ name: ci
 
 on:
   push:
-    branches: [universal, main, universal-ci]
+    branches: [universal, main]
   pull_request:
     branches: [universal, main]
   workflow_dispatch:
