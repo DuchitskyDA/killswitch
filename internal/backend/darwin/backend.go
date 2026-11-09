@@ -137,21 +137,21 @@ func (b *Backend) Apply(r backend.Ruleset) error {
 			return err
 		}
 	}
-	if err := b.load(rules.Text); err != nil {
+	loaded, err := b.load(rules.Text)
+	if err != nil {
 		return err
 	}
-	if rules.Mode != policy.ModeOn {
-		return nil
+	if rules.Mode == policy.ModeOn {
+		if err := b.ensureToken(); err != nil {
+			return err
+		}
+		// Решение владельца «Сбрасывать все» (рев. 4 B2): состояния чужих keep-state правил обходят наш якорь.
+		// Наши pass без состояния, поэтому разрешённые потоки сброс не рвёт.
+		if _, err := b.pf("", "-F", "states"); err != nil {
+			return fmt.Errorf("сброс состояний pf: %w", err)
+		}
 	}
-	if err := b.ensureToken(); err != nil {
-		return err
-	}
-	// Решение владельца «Сбрасывать все» (рев. 4 B2): состояния чужих keep-state правил обходят наш якорь.
-	// Наши pass без состояния, поэтому разрешённые потоки сброс не рвёт.
-	if _, err := b.pf("", "-F", "states"); err != nil {
-		return fmt.Errorf("сброс состояний pf: %w", err)
-	}
-	return nil
+	return b.record(loaded)
 }
 
 // ensureAnchorPoint: в основном наборе нет `anchor "com.apple/*"` — вернуть /etc/pf.conf (как старый скрипт).
@@ -172,25 +172,30 @@ func (b *Backend) ensureAnchorPoint() error {
 	return nil
 }
 
-// load грузит текст якоря и записывает пару «план + прочитанное обратно сразу после загрузки»:
-// по ней Status отличает наш набор от дрейфа, не завися от формы печати pfctl.
-func (b *Backend) load(text string) error {
+// load грузит текст якоря (из временного файла) и возвращает прочитанное обратно сразу после загрузки.
+func (b *Backend) load(text string) (string, error) {
 	tmp := b.paths.rulesFile() + ".new"
 	if err := os.WriteFile(tmp, []byte(text), 0o644); err != nil {
-		return err
+		return "", err
 	}
 	if _, err := b.pf("", "-a", Anchor, "-f", tmp); err != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("загрузка якоря: %w", err)
+		return "", fmt.Errorf("загрузка якоря: %w", err)
 	}
 	loaded, err := b.pf("", "-a", Anchor, "-sr")
 	if err != nil {
-		return fmt.Errorf("чтение якоря после загрузки: %w", err)
+		return "", fmt.Errorf("чтение якоря после загрузки: %w", err)
 	}
+	return loaded, nil
+}
+
+// record фиксирует пару «план + прочитанное после загрузки»: по ней Status отличает наш набор от дрейфа,
+// не завися от формы печати pfctl. Пишется последним шагом Apply: до записи факт считается дрейфом.
+func (b *Backend) record(loaded string) error {
 	if err := writeAtomic(b.paths.loadedFile(), []byte(loaded), 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, b.paths.rulesFile())
+	return os.Rename(b.paths.rulesFile()+".new", b.paths.rulesFile())
 }
 
 // ensureToken: ровно один наш токен (по имени процесса killswitchd в References).

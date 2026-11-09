@@ -141,4 +141,4 @@ cat /var/log/killswitch.log 2>/dev/null | tail -40
 
 log "Итог"
 cat "$RES"
-! grep -Eq ' (FAIL|LEAK) ' "$RES"
+! grep -Eq "^RESULT [^ ]+ (FAIL|LEAK|INCONCLUSIVE) " "$RES"

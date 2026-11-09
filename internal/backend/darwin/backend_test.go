@@ -255,3 +255,30 @@ func TestEvidenceWithoutBeforeProbeIsError(t *testing.T) {
 		t.Error("без снимка счётчика до пробы свидетельства не бывает")
 	}
 }
+
+// Запись о загруженном наборе — только после сброса состояний: иначе сбой между загрузкой и сбросом
+// выглядел бы для enforce как совпавший план, и чужие состояния пережили бы on.
+func TestApplyFailedFlushLeavesDrift(t *testing.T) {
+	f := newFixture(t)
+	f.healthy()
+	f.run.fails["pfctl -F states"] = true
+	r := onRules()
+	if err := f.b.Apply(r); err == nil {
+		t.Fatal("сбой сброса состояний — ошибка Apply")
+	}
+	if s := status(t, f.b); s.Hash == backend.HashOf(r) {
+		t.Error("без сброса состояний хеш не должен совпасть с планом: enforce применит заново")
+	}
+}
+
+func TestApplyCopiesBinaryForDaemon(t *testing.T) {
+	f := newFixture(t)
+	f.healthy()
+	f.apply(onRules())
+	exe, _ := f.b.exe()
+	want, _ := os.ReadFile(exe)
+	got, err := os.ReadFile(f.paths.binary())
+	if err != nil || string(got) != string(want) {
+		t.Errorf("копия бинарника для LaunchDaemon: err=%v содержимое %q", err, got)
+	}
+}
