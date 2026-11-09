@@ -137,14 +137,29 @@ func (b *Backend) Apply(r backend.Ruleset) error {
 			return err
 		}
 	}
+	var prior priorSet
+	if rules.Mode != policy.ModeOn {
+		prior = b.priorSet() // фактический прежний набор — на случай отката хвоста
+	}
 	// Запись снимается до загрузки: любой сбой дальше (загрузка, токен, сброс) — дрейф, и enforce повторит Apply,
 	// даже если план тот же, что записан.
 	if err := removeIfExists(b.paths.loadedFile()); err != nil {
 		return err
 	}
-	loaded, err := b.load(rules.Text)
+	if err := b.load(rules.Text); err != nil {
+		return err // pfctl грузит якорь атомарно: при отказе остаётся прежний набор
+	}
+	if err := b.finish(rules); err != nil {
+		return b.failClosed(prior, err)
+	}
+	return nil
+}
+
+// finish — хвост Apply после загрузки: чтение обратно, свой токен и сброс состояний (on), запись.
+func (b *Backend) finish(rules Rules) error {
+	loaded, err := b.pf("", "-a", Anchor, "-sr")
 	if err != nil {
-		return err
+		return fmt.Errorf("чтение якоря после загрузки: %w", err)
 	}
 	if rules.Mode == policy.ModeOn {
 		if err := b.ensureToken(); err != nil {
@@ -158,6 +173,62 @@ func (b *Backend) Apply(r backend.Ruleset) error {
 	}
 	return b.record(loaded)
 }
+
+// priorSet — чем защищал якорь до Apply набора слабее on: запись последнего завершённого on и фактические правила
+// (Apply on мог упасть до записи — тогда запись говорит off, а в якоре on). Якорь не читается — считаем, что защищал.
+type priorSet struct {
+	protective bool
+	texts      []string // кандидаты отката по порядку; последний — блок всего
+}
+
+func (b *Backend) priorSet() priorSet {
+	var p priorSet
+	if rec, ok := b.readRecord(); ok && rec.mode == policy.ModeOn {
+		p.protective = true
+		p.texts = append(p.texts, rec.text)
+	}
+	before, err := b.pf("", "-a", Anchor, "-sr")
+	rules := ruleLines(before)
+	if err != nil || len(rules) > 0 {
+		p.protective = true
+	}
+	if err == nil && len(rules) > 0 {
+		p.texts = append(p.texts, strings.Join(rules, "\n")+"\n")
+	}
+	p.texts = append(p.texts, blockAllText)
+	return p
+}
+
+// failClosed — хвост Apply упал после загрузки набора слабее on, а прежний набор защищал: вернуть его (последним
+// средством — блок всего), снова взять свой токен и отозвать состояния, открытые в окне, — ошибка не оставляет
+// машину открытой (контракт Apply). Набор on загружен сам и защищает; прежний пустой якорь — прежний набор и так пуст.
+// Откат грузится со stdin: хвост мог упасть как раз на записи файла. Запись остаётся снятой — enforce повторит Apply.
+func (b *Backend) failClosed(prior priorSet, cause error) error {
+	if !prior.protective {
+		return cause
+	}
+	for _, text := range prior.texts {
+		if _, err := b.pf(text, "-a", Anchor, "-f", "-"); err != nil {
+			continue
+		}
+		// Оба шага независимы: сбой токена не отменяет отзыв состояний.
+		var tail []error
+		if err := b.ensureToken(); err != nil {
+			tail = append(tail, fmt.Errorf("pf не включён своим токеном: %w", err))
+		}
+		if _, err := b.pf("", "-F", "states"); err != nil {
+			tail = append(tail, fmt.Errorf("состояния pf не сброшены: %w", err))
+		}
+		if len(tail) > 0 {
+			return fmt.Errorf("%w; прежняя защита возвращена, но: %w", cause, errors.Join(tail...))
+		}
+		return fmt.Errorf("%w (прежняя защита возвращена)", cause)
+	}
+	return fmt.Errorf("%w; вернуть прежнюю защиту не удалось", cause)
+}
+
+// blockAllText — последний рубеж отката: только lo0 и блок всего остального.
+const blockAllText = headerMode + "on\npass out quick on lo0 all no state\nblock return out quick all\n"
 
 // ensureAnchorPoint: в основном наборе нет `anchor "com.apple/*"` — вернуть /etc/pf.conf (как старый скрипт).
 // Чужое правило выше якоря не трогаем: это только LEAK (решение владельца «А»).
@@ -177,21 +248,17 @@ func (b *Backend) ensureAnchorPoint() error {
 	return nil
 }
 
-// load грузит текст якоря (из временного файла) и возвращает прочитанное обратно сразу после загрузки.
-func (b *Backend) load(text string) (string, error) {
+// load грузит текст якоря из временного файла (атомарно для якоря).
+func (b *Backend) load(text string) error {
 	tmp := b.paths.rulesFile() + ".new"
 	if err := os.WriteFile(tmp, []byte(text), 0o644); err != nil {
-		return "", err
+		return err
 	}
 	if _, err := b.pf("", "-a", Anchor, "-f", tmp); err != nil {
 		_ = os.Remove(tmp)
-		return "", fmt.Errorf("загрузка якоря: %w", err)
+		return fmt.Errorf("загрузка якоря: %w", err)
 	}
-	loaded, err := b.pf("", "-a", Anchor, "-sr")
-	if err != nil {
-		return "", fmt.Errorf("чтение якоря после загрузки: %w", err)
-	}
-	return loaded, nil
+	return nil
 }
 
 // record фиксирует пару «план + прочитанное после загрузки»: по ней Status отличает наш набор от дрейфа,
