@@ -1,0 +1,210 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/DuchitskyDA/killswitch/internal/backend"
+	"github.com/DuchitskyDA/killswitch/internal/env"
+	"github.com/DuchitskyDA/killswitch/internal/policy"
+	"github.com/DuchitskyDA/killswitch/internal/probe"
+	"github.com/DuchitskyDA/killswitch/internal/profile"
+	"github.com/DuchitskyDA/killswitch/internal/state"
+)
+
+// Коды выхода CLI.
+const (
+	exitOK           = 0
+	exitConfig       = 2
+	exitApply        = 3
+	exitLeak         = 4
+	exitInconclusive = 5
+)
+
+const usage = `использование: killswitch [-config путь] <команда>
+  on | off | repair     включить, выключить до перезагрузки, repair (Windows) до перезагрузки
+  status                состояние; код 4 — структурная утечка
+  check                 пробы утечки; 0 — блок, 4 — утечка, 5 — нет уверенности
+  detect                найти установленные клиенты по профилям
+  enforce               наблюдатель (служба)
+  uninstall             снять всё без конфига и сети
+  plan [on|off|repair]  напечатать правила без применения`
+
+// deps — всё внешнее для ядра CLI; в тестах подменяется.
+type deps struct {
+	goos     string
+	dir      string // каталог state.json и config.toml
+	backend  func() (backend.Backend, error)
+	lock     func(dir string) (release func(), err error)
+	now      func() time.Time
+	out, err io.Writer
+	profiles fs.FS
+	glob     func(pattern string) ([]string, error)
+	prober   func(b backend.Backend) probe.Prober
+}
+
+type app struct {
+	d          deps
+	b          backend.Backend
+	configPath string
+}
+
+// cliError — ошибка с кодом выхода.
+type cliError struct {
+	code int
+	err  error
+}
+
+func (e cliError) Error() string { return e.err.Error() }
+
+func fail(code int, format string, args ...any) error {
+	return cliError{code: code, err: fmt.Errorf(format, args...)}
+}
+
+func run(ctx context.Context, args []string, d deps) int {
+	fsFlags := flag.NewFlagSet("killswitch", flag.ContinueOnError)
+	fsFlags.SetOutput(d.err)
+	configPath := fsFlags.String("config", filepath.Join(d.dir, "config.toml"), "путь к config.toml")
+	if err := fsFlags.Parse(args); err != nil || fsFlags.NArg() == 0 {
+		fmt.Fprintln(d.err, usage)
+		return exitConfig
+	}
+	a := &app{d: d, configPath: *configPath}
+	err := a.dispatch(ctx, fsFlags.Arg(0), fsFlags.Args()[1:])
+	var ce cliError
+	switch {
+	case err == nil:
+		return exitOK
+	case errors.As(err, &ce):
+		if ce.err != nil && ce.err.Error() != "" {
+			fmt.Fprintln(d.err, "killswitch:", ce.err)
+		}
+		return ce.code
+	}
+	fmt.Fprintln(d.err, "killswitch:", err)
+	return exitApply
+}
+
+func (a *app) dispatch(ctx context.Context, cmd string, rest []string) error {
+	if cmd == "detect" {
+		return a.detect()
+	}
+	known := map[string]bool{"on": true, "off": true, "repair": true, "status": true, "check": true,
+		"enforce": true, "uninstall": true, "plan": true}
+	if !known[cmd] {
+		return fail(exitConfig, "неизвестная команда %q\n%s", cmd, usage)
+	}
+	b, err := a.d.backend()
+	if err != nil {
+		return fail(exitApply, "%v", err)
+	}
+	a.b = b
+	switch cmd {
+	case "on", "off", "repair":
+		return a.transition(policy.Mode(cmd))
+	case "status":
+		return a.status()
+	case "check":
+		return a.check(ctx)
+	case "enforce":
+		return a.enforce(ctx)
+	case "uninstall":
+		return a.uninstall()
+	}
+	return a.plan(rest)
+}
+
+func (a *app) statePath() string { return filepath.Join(a.d.dir, state.FileName) }
+
+// loadPolicy: конфиг → профиль → политика в режиме mode, проверенная по возможностям ОС. Ошибка — код 2.
+func (a *app) loadPolicy(mode policy.Mode) (policy.Policy, error) {
+	data, err := os.ReadFile(a.configPath)
+	if err != nil {
+		return policy.Policy{}, fail(exitConfig, "конфиг: %v", err)
+	}
+	cfg, err := policy.ParseConfig(data)
+	if err != nil {
+		return policy.Policy{}, fail(exitConfig, "%v", err)
+	}
+	caps := a.b.Capabilities()
+	layer, err := a.profileLayer(cfg.Profile, caps.OS)
+	if err != nil {
+		return policy.Policy{}, err
+	}
+	p, err := policy.Build(layer, cfg)
+	if err != nil {
+		return policy.Policy{}, fail(exitConfig, "%v", err)
+	}
+	p = p.WithMode(mode)
+	if err := p.Validate(caps); err != nil {
+		return policy.Policy{}, fail(exitConfig, "%v", err)
+	}
+	return p, nil
+}
+
+func (a *app) profileLayer(name, goos string) (policy.Layer, error) {
+	if name == "" {
+		return policy.Layer{}, nil
+	}
+	all, err := profile.Load(a.d.profiles)
+	if err != nil {
+		return policy.Layer{}, fail(exitConfig, "%v", err)
+	}
+	p, ok := all[name]
+	if !ok {
+		return policy.Layer{}, fail(exitConfig, "профиль %q не найден (есть: %v)", name, profile.Names(all))
+	}
+	sec, ok := p.Section(goos)
+	if !ok {
+		return policy.Layer{}, fail(exitConfig, "в профиле %q нет секции [%s]", name, goos)
+	}
+	return sec.Layer(), nil
+}
+
+// snapshot: снимок машины с последними известными адресами из state.json. Health — заданное ядром.
+func (a *app) snapshot(p policy.Policy, st state.State, h env.HealthState) (env.Env, error) {
+	e, err := a.b.Snapshot(p)
+	if err != nil {
+		return env.Env{}, fail(exitApply, "снимок машины: %v", err)
+	}
+	e, warns := env.WithLastKnown(e, st.LastKnown)
+	for _, w := range warns {
+		fmt.Fprintln(a.d.err, w)
+	}
+	e.Health = h
+	return e, nil
+}
+
+// planFor: проверка путей repair и чистый план.
+func (a *app) planFor(p policy.Policy, e env.Env) (backend.Ruleset, error) {
+	if p.Mode == policy.ModeRepair {
+		for _, g := range p.Repair.Programs {
+			if len(e.Programs[g]) == 0 {
+				return nil, fail(exitConfig, "repair: по шаблону %q не найдено ни одной программы", g)
+			}
+		}
+	}
+	r, err := a.b.Plan(p, e)
+	switch {
+	case errors.Is(err, backend.ErrConfig):
+		return nil, fail(exitConfig, "план: %v", err)
+	case err != nil:
+		return nil, fail(exitApply, "план: %v", err)
+	}
+	return r, nil
+}
+
+func (a *app) withLock() (func(), error) {
+	release, err := a.d.lock(a.d.dir)
+	if err != nil {
+		return nil, fail(exitApply, "замок: %v", err)
+	}
+	return release, nil
+}
