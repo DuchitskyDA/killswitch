@@ -39,6 +39,10 @@ func (a *app) transition(target policy.Mode) error {
 	if err != nil {
 		return err
 	}
+	// Конфиг службы меняется только на принятый план: отвергнутый не сломает enforce.
+	if err := a.adoptConfig(); err != nil {
+		return fail(exitApply, "config.toml: %v", err)
+	}
 	if err := a.apply(st, target, r, e); err != nil {
 		return err
 	}

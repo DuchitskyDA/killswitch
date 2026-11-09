@@ -54,6 +54,7 @@ type app struct {
 	d          deps
 	b          backend.Backend
 	configPath string
+	configData []byte // байты последнего проверенного loadPolicy конфига; их и принимает служба
 }
 
 // cliError — ошибка с кодом выхода.
@@ -123,6 +124,34 @@ func (a *app) dispatch(ctx context.Context, cmd string, rest []string) error {
 
 func (a *app) statePath() string { return filepath.Join(a.d.dir, state.FileName) }
 
+// adoptConfig: конфиг из флага -config становится конфигом службы (<каталог>/config.toml),
+// чтобы enforce после загрузки и наблюдатель применяли тот же набор, что и команда.
+func (a *app) adoptConfig() error {
+	own := filepath.Join(a.d.dir, "config.toml")
+	if filepath.Clean(a.configPath) == filepath.Clean(own) {
+		return nil
+	}
+	data := a.configData
+	if data == nil {
+		return errors.New("конфиг не проверен до копирования")
+	}
+	if err := os.MkdirAll(a.d.dir, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(a.d.dir, "config.toml.*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	_, werr := tmp.Write(data)
+	serr := tmp.Sync()
+	cerr := tmp.Close()
+	if err := errors.Join(werr, serr, cerr); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), own)
+}
+
 // loadPolicy: конфиг → профиль → политика в режиме mode, проверенная по возможностям ОС. Ошибка — код 2.
 func (a *app) loadPolicy(mode policy.Mode) (policy.Policy, error) {
 	data, err := os.ReadFile(a.configPath)
@@ -133,6 +162,7 @@ func (a *app) loadPolicy(mode policy.Mode) (policy.Policy, error) {
 	if err != nil {
 		return policy.Policy{}, fail(exitConfig, "%v", err)
 	}
+	a.configData = data
 	caps := a.b.Capabilities()
 	layer, err := a.profileLayer(cfg.Profile, caps.OS)
 	if err != nil {

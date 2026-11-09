@@ -1,0 +1,21 @@
+# AmneziaWG: форк WireGuard; описание адаптера на Windows то же — WireGuard Tunnel.
+name = "amneziawg"
+description = "AmneziaWG: адаптер WireGuard Tunnel / awg* / utun*"
+
+verified_on = []
+
+[windows]
+interfaces = ["WireGuard Tunnel*"]
+programs = ['C:\Program Files\AmneziaWG\amneziawg.exe']
+detect = ['C:\Program Files\AmneziaWG\amneziawg.exe']
+
+[linux]
+# Имя интерфейса = имя конфига awg-quick; другое имя задайте в конфиге: [tunnel] interfaces.
+interfaces = ["awg*"]
+# awg-quick ставит fwmark 51820 при Table=auto и маршруте 0/0 (если таблица занята — следующий номер).
+marks = ["0xca6c"]
+detect = ["/usr/bin/awg-quick"]
+
+[darwin]
+interfaces = ["utun*"]
+users = ["root"]

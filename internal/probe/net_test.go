@@ -27,7 +27,7 @@ func TestDirectSendsFromPlannedSourcePort(t *testing.T) {
 		_, _ = srv.WriteTo(buf[:n], addr)
 	}()
 	port := srv.LocalAddr().(*net.UDPAddr).AddrPort().Port()
-	src := netip.MustParseAddrPort("127.0.0.1:61005")
+	src := netip.MustParseAddrPort("127.0.0.1:30005")
 	id := ProbeID{Proto: "udp", Src: src, Dst: netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), port)}
 	noBind := health.Binder(func(env.Iface) health.ControlFunc {
 		return func(string, string, syscall.RawConn) error { return nil }

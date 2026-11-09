@@ -163,12 +163,12 @@ func TestOnWithCorruptStateStartsFresh(t *testing.T) {
 
 func TestOnKeepsLastKnownAddresses(t *testing.T) {
 	h := newHarness(t, baseConfig)
-	h.fb.Env.Resolved = map[string][]netip.Addr{"vpn.example.org": {netip.MustParseAddr("203.0.113.2")}}
+	h.fb.Env.Resolved = map[string][]netip.Addr{"tunnel.example.org": {netip.MustParseAddr("203.0.113.2")}}
 	h.run("on")
 	h.fb.Env.Resolved = nil
-	h.fb.Env.ResolveErr = map[string]string{"vpn.example.org": "timeout"}
+	h.fb.Env.ResolveErr = map[string]string{"tunnel.example.org": "timeout"}
 	noErr(t, h.reconcile(env.HealthUnknown))
-	eq(t, h.state().LastKnown["vpn.example.org"], []netip.Addr{netip.MustParseAddr("203.0.113.2")})
+	eq(t, h.state().LastKnown["tunnel.example.org"], []netip.Addr{netip.MustParseAddr("203.0.113.2")})
 }
 
 func TestFirstInstallFailedApplyIsCompletedByEnforce(t *testing.T) {
@@ -257,4 +257,49 @@ func TestPlanAfterFailedFirstApplyShowsOn(t *testing.T) {
 	h.out.Reset()
 	eq(t, h.run("plan"), exitOK)
 	eq(t, strings.HasPrefix(h.out.String(), "mode=on "), true)
+}
+
+func TestOnWithOtherConfigBecomesServiceConfig(t *testing.T) {
+	h := newHarness(t, baseConfig)
+	other := filepath.Join(t.TempDir(), "other.toml")
+	noErr(t, os.WriteFile(other, []byte("# другой конфиг\n"+baseConfig), 0o600))
+	eq(t, h.run("-config", other, "on"), exitOK)
+	got, err := os.ReadFile(filepath.Join(h.dir, "config.toml"))
+	noErr(t, err)
+	eq(t, string(got), "# другой конфиг\n"+baseConfig)
+}
+
+func TestRejectedPlanKeepsServiceConfig(t *testing.T) {
+	h := newHarness(t, baseConfig)
+	other := filepath.Join(t.TempDir(), "other.toml")
+	noErr(t, os.WriteFile(other, []byte("# другой конфиг\n"+baseConfig), 0o600))
+	h.fb.PlanErr = backend.ErrConfig
+	eq(t, h.run("-config", other, "on"), exitConfig)
+	got, err := os.ReadFile(filepath.Join(h.dir, "config.toml"))
+	noErr(t, err)
+	eq(t, string(got), baseConfig)
+}
+
+// configSwapBackend меняет исходный конфиг посреди Snapshot — как редактор во время долгого разрешения имён.
+type configSwapBackend struct {
+	backend.Backend
+	duringSnapshot func()
+}
+
+func (b configSwapBackend) Snapshot(p policy.Policy) (env.Env, error) {
+	b.duringSnapshot()
+	return b.Backend.Snapshot(p)
+}
+
+func TestAdoptsExactlyPlannedConfig(t *testing.T) {
+	h := newHarness(t, baseConfig)
+	other := filepath.Join(t.TempDir(), "other.toml")
+	noErr(t, os.WriteFile(other, []byte("# другой конфиг\n"+baseConfig), 0o600))
+	d := h.deps()
+	b := configSwapBackend{Backend: h.fb, duringSnapshot: func() { noErr(t, os.WriteFile(other, []byte("unknown_key = true\n"), 0o600)) }}
+	d.backend = func() (backend.Backend, error) { return b, nil }
+	eq(t, run(context.Background(), []string{"-config", other, "on"}, d), exitOK)
+	got, err := os.ReadFile(filepath.Join(h.dir, "config.toml"))
+	noErr(t, err)
+	eq(t, string(got), "# другой конфиг\n"+baseConfig)
 }

@@ -88,7 +88,7 @@ func TestRunNoAnswerWithEvidenceIsBlocked(t *testing.T) {
 	r := run(Input{Targets: []netip.Addr{target4}, Tunnels: []env.Iface{tun}, Physical: []env.Iface{eth}}, p, fakeEvidence{dropped: true})
 	eq(t, r.Overall, Blocked)
 	eq(t, len(r.Probes), len(Services))
-	eq(t, p.sent[0].Src, netip.MustParseAddrPort("198.51.100.2:61000"))
+	eq(t, p.sent[0].Src, netip.MustParseAddrPort("198.51.100.2:30000"))
 	eq(t, p.sent[1].Src.Port(), SrcPortFirst+1)
 }
 
