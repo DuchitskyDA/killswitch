@@ -68,7 +68,7 @@ func TestLiveDirectProbeDroppedWithEvidence(t *testing.T) {
 		proto string
 		port  uint16
 		dport int
-	}{{"tcp", probe.SrcPortFirst + 10, 80}, {"udp", probe.SrcPortFirst + 11, 53}} {
+	}{{"tcp", probe.SrcPortFirst + 10, 80}, {"udp", probe.SrcPortFirst + 11, 53}, {"tcp", probe.SrcPortFirst + 12, 53}} {
 		id := probe.ProbeID{Proto: c.proto, Src: netip.AddrPortFrom(src, c.port),
 			Dst: netip.AddrPortFrom(netip.MustParseAddr(liveTarget), uint16(c.dport)), Iface: phys.Name, At: time.Now()}
 		if err := b.BeforeProbe(id); err != nil {

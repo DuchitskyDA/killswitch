@@ -56,7 +56,7 @@ log "Прямая проба отброшена"
 r=$(probe_http)
 case "$r" in OK*) result 2.direct LEAK "ksprobe вышел мимо туннеля: $r" ;; *) result 2.direct PASS "ksprobe http 1.1.1.1: $r" ;; esac
 printf '$ live.test\n'
-if env KS_PROBE_USER="$PROBE_USER" "$KS/live.test" -test.v 2>&1; then result 2.evidence PASS "свидетельство, BindControl, Status"; else result 2.evidence FAIL "живой тест"; fi
+if env KS_PROBE_USER="$PROBE_USER" "$KS/live.test" -test.run "^TestLive" -test.v 2>&1; then result 2.evidence PASS "свидетельство, BindControl, Status"; else result 2.evidence FAIL "живой тест"; fi
 
 log "lo0 проходит"
 /usr/bin/python3 -m http.server 18080 --bind 127.0.0.1 >/dev/null 2>&1 &

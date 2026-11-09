@@ -73,11 +73,7 @@ func renderOn(p policy.Policy, e env.Env) string {
 		w.line("pass out quick from any to %s no state", list(prefixStrings(policy.LANMulticast)))
 	}
 	w.line("# пробы check: отброс считается правилом своего порта-источника")
-	for port := probe.SrcPortFirst; port <= probe.SrcPortLast; port++ {
-		for _, proto := range []string{"tcp", "udp"} {
-			w.line("block return out quick proto %s from any port %d to any label %q", proto, port, probeLabel(proto, port))
-		}
-	}
+	renderProbes(&w, "")
 	w.line("# всё остальное")
 	w.line("block return out quick all")
 	return w.b.String()
@@ -161,7 +157,19 @@ func renderDNS(w *writer, p policy.Policy, e env.Env) {
 	if len(d.Listed) > 0 {
 		w.line("pass out quick proto { tcp udp } from any to %s port 53 no state", list(prefixStrings(d.Listed)))
 	}
+	w.line("# пробы check к порту 53: DNS-блок ниже отбросил бы их раньше общих правил проб")
+	renderProbes(w, " port 53")
 	w.line("block return out quick proto { tcp udp } from any to any port 53")
+}
+
+// renderProbes — block-правила портов-источников проб (рев. 5); label общий для пары «к 53» и «прочее»,
+// счётчики пакетов по label складываются.
+func renderProbes(w *writer, dstPort string) {
+	for port := probe.SrcPortFirst; port <= probe.SrcPortLast; port++ {
+		for _, proto := range []string{"tcp", "udp"} {
+			w.line("block return out quick proto %s from any port %d to any%s label %q", proto, port, dstPort, probeLabel(proto, port))
+		}
+	}
 }
 
 func healthWord(h env.HealthState) string {
