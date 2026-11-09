@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DuchitskyDA/killswitch/internal/backend"
@@ -247,4 +248,13 @@ func TestOnWithoutBootIDIsApplyError(t *testing.T) {
 	h.fb.Env.BootID = ""
 	eq(t, h.run("on"), exitApply)
 	eq(t, len(h.fb.Applies), 0)
+}
+
+func TestPlanAfterFailedFirstApplyShowsOn(t *testing.T) {
+	h := newHarness(t, baseConfig)
+	h.fb.ApplyErr = errors.New("transaction aborted")
+	eq(t, h.run("on"), exitApply)
+	h.out.Reset()
+	eq(t, h.run("plan"), exitOK)
+	eq(t, strings.HasPrefix(h.out.String(), "mode=on "), true)
 }

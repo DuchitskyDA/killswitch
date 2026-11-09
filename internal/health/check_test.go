@@ -54,6 +54,13 @@ func TestGateRouteViaPhysicalFails(t *testing.T) {
 	hasErr(t, err)
 }
 
+func TestGateRouteNotMarkedTunnelFails(t *testing.T) {
+	e := env.Env{Ifaces: []env.Iface{{Name: "wg0", Index: 7, Up: true}},
+		Routes: map[netip.Addr]env.Route{healthAddr.Addr(): {IfaceIndex: 7}}}
+	_, err := Gate(e, gatePolicy())
+	hasErr(t, err)
+}
+
 func TestGateTunnelDownFails(t *testing.T) {
 	e := env.Env{Ifaces: []env.Iface{{Name: "wg0", Index: 7}},
 		Routes: map[netip.Addr]env.Route{healthAddr.Addr(): {IfaceIndex: 7, ViaTunnel: true}}}

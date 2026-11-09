@@ -39,7 +39,7 @@ func (a *app) uninstall() error {
 func (a *app) plan(args []string) error {
 	mode := policy.ModeOn
 	st, err := state.Load(a.statePath())
-	if err == nil {
+	if err == nil && st.Mode != "" {
 		mode = st.Mode
 	}
 	if len(args) > 0 {
