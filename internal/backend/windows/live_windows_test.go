@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -186,6 +187,33 @@ func TestLiveTie(t *testing.T) {
 	gone := tieKinds(t, b)
 	if len(after) != 0 || len(before) != 1 || before[0] != "wfp-tie" || len(gone) != 0 {
 		t.Errorf("ожидалось: после нашего — нет, раньше нашего — wfp-tie, без чужого — нет; получено %v / %v / %v", after, before, gone)
+	}
+}
+
+// TestLiveBootKeys: boot-time-набор установлен (block + loopback + DHCP на 4 слоях); ключи — в KS_BOOTKEYS
+// для независимой сверки с `netsh wfp show boottimepolicy`.
+func TestLiveBootKeys(t *testing.T) {
+	onRunner(t)
+	s, err := openSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	rules, err := ourRules(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, r := range rules {
+		if r.BootTime {
+			keys = append(keys, strings.ToLower(strings.Trim(r.ID.String(), "{}")))
+		}
+	}
+	if err := os.WriteFile(os.Getenv("KS_BOOTKEYS"), []byte(strings.Join(keys, "\n")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 3*len(Layers) {
+		t.Errorf("boot-time фильтров %d, ожидалось %d", len(keys), 3*len(Layers))
 	}
 }
 

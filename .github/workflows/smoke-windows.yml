@@ -18,6 +18,7 @@ concurrency:
 env:
   KS: 'C:\ks'
   KS_CONFIG: 'C:\ProgramData\killswitch\config.toml'
+  KS_BOOTKEYS: 'C:\ks\bootkeys.txt'
 
 jobs:
   smoke:
@@ -76,6 +77,13 @@ jobs:
               & "$env:KS\$dir\curl.exe" -s -o NUL -m 6 $url 2>&1 | Out-Null
               $code = $LASTEXITCODE
               Result $id (($code -eq 0) -eq $wantOk) "curl=$code want-ok=$wantOk"
+          }
+          # Boot-time-политика в netsh — без имён: считаем наши фильтры по ключам из KS_BOOTKEYS.
+          function Count-BootKeys($tag) {
+              netsh wfp show boottimepolicy file="$env:KS\boottime-$tag.xml" | Out-Null
+              $xml = (Get-Content "$env:KS\boottime-$tag.xml" -Raw).ToLower()
+              $n = @(Get-Content $env:KS_BOOTKEYS | Where-Object { $_ -and $xml.Contains($_) }).Count
+              "ours=$n"
           }
           function Assert-Results {
               if ($script:Fails -gt 0) { throw "FAIL: $script:Fails" }
@@ -170,8 +178,8 @@ jobs:
           Expect-Output 'service-running' 'Running' { (Get-Service killswitch).Status }
           Expect-Output 'status-on' 'режим=on' { & $InstalledExe status }
           Expect-Probe 'service-denied-blocked' $false 'probe-denied' 'http://1.1.1.1/'
-          netsh wfp show boottimepolicy file="$env:KS\boottime-on.xml" | Out-Null
-          Expect-Output 'boottime-present' 'True' { (Get-Content "$env:KS\boottime-on.xml" -Raw).Contains('killswitch') }
+          Expect-Code 'bootkeys' 0 { & "$env:KS\live.test.exe" '-test.run=^TestLiveBootKeys$' '-test.v' }
+          Expect-Output 'boottime-present-netsh' 'ours=12' { Count-BootKeys 'on' }
           Assert-Results
 
       - name: uninstall without config removes provider, sublayer and all filters
@@ -182,8 +190,7 @@ jobs:
           Expect-Code 'uninstall' 0 { & ./dist/windows/menu.ps1 -Action uninstall }
           Expect-Code 'gone' 0 { & "$env:KS\live.test.exe" '-test.run=^TestLiveGone$' '-test.v' }
           Expect-Probe 'after-uninstall-denied-passes' $true 'probe-denied' 'http://1.1.1.1/'
-          netsh wfp show boottimepolicy file="$env:KS\boottime.xml" | Out-Null
-          Expect-Output 'boottime-clean' 'False' { (Get-Content "$env:KS\boottime.xml" -Raw).Contains('killswitch') }
+          Expect-Output 'boottime-clean-netsh' 'ours=0' { Count-BootKeys 'gone' }
           Assert-Results
 
       - name: cleanup
