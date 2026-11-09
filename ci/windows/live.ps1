@@ -5,7 +5,6 @@
 $nic = $env:KS_NIC
 $resolver = $env:KS_RESOLVER
 Write-Host "физический интерфейс: $nic, резолвер DHCP: $resolver"
-& "$env:KS\wfptool.exe" collect
 Write-Config
 $tg = Start-Process python -ArgumentList "$PSScriptRoot\..\targets.py", '127.0.0.2', '1500', '18080' -PassThru -NoNewWindow `
     -RedirectStandardOutput "$env:KS\targets.log" -RedirectStandardError "$env:KS\targets.err.log"
@@ -45,6 +44,7 @@ if ($nat) {
 Expect-Code 'S9.check-tunnel-up' 0 { & $KsExe check }
 
 Write-Host '== S3: LAN и DNS'
+& "$env:KS\wfptool.exe" collect # после live.test: TestLiveCollectionRestored выключает сбор событий
 Check 'S3.dns-dhcp-open' (Probe-Ok 'probe-denied' 'dns-udp' $resolver $nic) "open: DNS к резолверу DHCP $resolver через $nic отвечает"
 Check 'S3.dns-other-blocked' (Probe-Blocked 'probe-denied' 'dns-udp' '8.8.8.8' $nic) 'open: DNS к 8.8.8.8 через физику закрыт'
 $t0 = (Get-Date).ToUniversalTime().ToString('o')
@@ -99,6 +99,8 @@ Expect-Code 'S6.on-again' 0 { & $KsExe on }
 Expect-Probe 'S6.on-again-blocked' $false 'probe-other' 'http://1.1.1.1/'
 
 Write-Host '== S7: перезапуск службы до старта клиента'
+Restart-Service killswitch
+Expect-Code 'S7.cli-during-service-step' 0 { & $KsExe on } # команда сразу после старта службы ждёт её замок
 Stop-Service killswitch -Force
 Expect-Probe 'S7.service-stopped-blocked' $false 'probe-denied' 'http://1.1.1.1/'
 Start-Service killswitch
@@ -136,6 +138,7 @@ Expect-Code 'S9.tie-gone-status' 0 { & $KsExe status }
 
 Write-Host '== S8: сломанное состояние и uninstall без конфига'
 Start-Service killswitch
+Start-Sleep 10 # первый шаг службы завершён (замок свободен)
 Expect-Code 'S8.off' 0 { & $KsExe off }
 Set-Content 'C:\ProgramData\killswitch\state.json' '{"gen": 7, "mode": "off", broken'
 Restart-Service killswitch

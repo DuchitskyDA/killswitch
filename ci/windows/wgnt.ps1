@@ -40,6 +40,7 @@ function Wg-Dropped {
     Write-Host "адаптер wgks через $s с"
     ping -n 4 10.99.0.2 | Out-Null # данные в туннель — повод для рукопожатия
     Start-Sleep 8
+    & "$Wg\wg.exe" show wgks 2>&1 | Write-Host # transfer: отправлено ли рукопожатие с точки зрения WireGuard
     & "$env:KS\wfptool.exe" drops $Ep $t0 2>&1 | Write-Host
     $dropped = $LASTEXITCODE -eq 0
     & "$Wg\wireguard.exe" /uninstalltunnelservice wgks 2>&1 | Write-Host
