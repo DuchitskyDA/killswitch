@@ -20,7 +20,7 @@ jobs:
       matrix:
         os: [macos-15, macos-15-intel, macos-26]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
@@ -31,7 +31,7 @@ jobs:
         timeout-minutes: 2
         run: |
           sudo mkdir -p /private/tmp/ks
-          sudo cp spike/pf/*.sh spike/pf/*.py /private/tmp/ks/ 2>/dev/null || sudo cp spike/pf/*.sh /private/tmp/ks/
+          sudo cp spike/pf/*.sh spike/pf/*.py /private/tmp/ks/
           sudo chmod -R a+rX /private/tmp/ks
           echo "PY=$(command -v python3)" >> "$GITHUB_ENV"
 
@@ -47,6 +47,31 @@ jobs:
         timeout-minutes: 2
         continue-on-error: true
         run: sudo sh /private/tmp/ks/wdtest.sh
+
+      - name: 1 tokens
+        timeout-minutes: 3
+        continue-on-error: true
+        run: sudo env PY="$PY" sh /private/tmp/ks/t1-token.sh
+
+      - name: 2 anchor reachability
+        timeout-minutes: 4
+        continue-on-error: true
+        run: sudo env PY="$PY" sh /private/tmp/ks/t2-anchor.sh
+
+      - name: 3 policy
+        timeout-minutes: 8
+        continue-on-error: true
+        run: sudo env PY="$PY" sh /private/tmp/ks/t3-policy.sh
+
+      - name: 4 state revocation
+        timeout-minutes: 5
+        continue-on-error: true
+        run: sudo env PY="$PY" sh /private/tmp/ks/t4-states.sh
+
+      - name: 5 restart
+        timeout-minutes: 5
+        continue-on-error: true
+        run: sudo env PY="$PY" sh /private/tmp/ks/t5-restart.sh
 
       - name: reset
         if: always()
