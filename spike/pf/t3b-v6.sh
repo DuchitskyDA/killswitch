@@ -41,7 +41,7 @@ result 3b.udp6-pf-on INFO "$(cap_multi "$PROBE_UID" udp 2001:db8:1::2 5000)"
 run sh -c "pfctl -vsr 2>/dev/null; pfctl -s info 2>/dev/null | grep -E 'match|normalize|fragment|short|bad'"
 
 log "C. strict, feth0 существовал до загрузки"
-{ policy strict keep; } | sed 's/^block return out quick all$/pass out quick inet proto tcp to 198.18.0.2 port 443 user '"$TRUST_UID"'\nblock return out quick all/' | load_anchor "$ANCHOR"
+{ policy strict keep | grep -v '^block'; echo "pass out quick inet proto tcp to 198.18.0.2 port 443 user $TRUST_UID"; echo "block return out quick all"; } | load_anchor "$ANCHOR"
 run pfctl -a "$ANCHOR" -sr
 diag
 c1=$(cap_multi "$TRUST_UID" tcp 2001:db8:1::2 443); echo "C trust tcp6 443: $c1"

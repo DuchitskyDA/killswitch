@@ -63,6 +63,11 @@ jobs:
         continue-on-error: true
         run: sudo env PY="$PY" sh /private/tmp/ks/t3-policy.sh
 
+      - name: 3b v6 anomalies
+        timeout-minutes: 5
+        continue-on-error: true
+        run: sudo env PY="$PY" sh /private/tmp/ks/t3b-v6.sh
+
       - name: 4 state revocation
         timeout-minutes: 5
         continue-on-error: true
