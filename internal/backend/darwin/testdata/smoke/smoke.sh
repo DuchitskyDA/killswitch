@@ -90,6 +90,19 @@ result 4.utun NOT_TESTED "utun на раннере не поднимался; т
 log "check"
 expect 5.check-no-targets 5 "$BIN" check
 
+log "check с целями: root доверен, пробы выше Trust → BLOCKED со свидетельством"
+arp -d 198.19.0.2 >/dev/null 2>&1
+ifconfig feth3 inet 198.19.0.2 netmask 255.255.255.255 alias
+/usr/bin/python3 "$KS/targets.py" 198.19.0.2 300 > "$OUT/targets.log" 2>&1 &
+tg=$!; sleep 2; cat "$OUT/targets.log"
+route -n get 198.19.0.2 2>&1 | grep -E 'interface|flags'
+printf '$ curl --interface feth2 (baseline через туннель)\n'; /usr/bin/curl -sS -m 3 -o /dev/null -w '%{http_code}\n' --interface feth2 http://198.19.0.2/ 2>&1
+cp "$DIR/config.toml" "$KS/config.toml.base"
+printf '\n[check]\ntargets = ["198.19.0.2"]\n' >> "$DIR/config.toml"
+expect 5.check-targets 0 "$BIN" check
+cp "$KS/config.toml.base" "$DIR/config.toml"
+kill "$tg" 2>/dev/null
+
 log "Чужое quick-правило выше якоря: только LEAK, основной набор не перезаписывается"
 printf 'pass out quick proto tcp to any port 443\nanchor "com.apple/*"\n' | pfctl -q -f - 2>&1
 expect 6.status-quick 4 "$BIN" status

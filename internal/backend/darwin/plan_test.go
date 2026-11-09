@@ -171,12 +171,14 @@ func linesWith(text, sub string) []string {
 	return out
 }
 
-// Пробы DNS (порт 53) отбрасывает DNS-блок раньше общих правил проб: перед ним нужны свои правила с тем же label.
-func TestRenderDNSProbeCountedBeforeDNSBlock(t *testing.T) {
+// Пробы check стоят выше Trust, DNS и LAN: проба от доверенного root отбрасывается со свидетельством,
+// а не проходит как разрешённый трафик. Порты проб ниже эфемерных — доверенный клиент в них не попадает.
+func TestRenderProbesBeforeTrustDNSAndLAN(t *testing.T) {
 	got := render(t, basePolicy(), baseEnv())
-	block := strings.Index(got, "block return out quick proto { tcp udp } from any to any port 53")
-	probe := strings.Index(got, `from any port 30000 to any port 53 label "killswitch-probe-udp-30000"`)
-	if probe < 0 || block < 0 || probe > block {
-		t.Errorf("правило пробы udp 30000 → 53 должно стоять до DNS-блока: проба %d, блок %d", probe, block)
+	probe := strings.Index(got, `block return out quick proto udp from any port 30000 to any label "killswitch-probe-udp-30000"`)
+	for _, later := range []string{"pass out quick proto { tcp udp } user 501", "port 53 no state", "fe80::/10 } no state"} {
+		if at := strings.Index(got, later); probe < 0 || at < 0 || probe > at {
+			t.Errorf("правило пробы (%d) должно стоять раньше %q (%d)", probe, later, at)
+		}
 	}
 }

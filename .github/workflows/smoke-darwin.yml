@@ -34,8 +34,7 @@ jobs:
 
       - name: unit tests
         timeout-minutes: 5
-        # cmd/killswitch не здесь: TestBackendNotImplementedIsApplyError ядра ждёт стаб newBackend (интеграция волны 2)
-        run: go test ./internal/backend/darwin/
+        run: go test ./internal/backend/darwin/ ./cmd/killswitch/
 
       - name: build
         timeout-minutes: 5
@@ -43,7 +42,7 @@ jobs:
           sudo mkdir -p /private/tmp/ks-smoke/out
           go build -o killswitch ./cmd/killswitch
           go test -c -tags darwinlive -o live.test ./internal/backend/darwin
-          sudo cp killswitch live.test internal/backend/darwin/testdata/smoke/*.sh /private/tmp/ks-smoke/
+          sudo cp killswitch live.test internal/backend/darwin/testdata/smoke/*.sh internal/backend/darwin/testdata/smoke/*.py /private/tmp/ks-smoke/
           id -u | sudo tee /private/tmp/ks-smoke/runner_uid
           sudo chmod -R a+rX /private/tmp/ks-smoke
 
