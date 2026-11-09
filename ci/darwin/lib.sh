@@ -114,6 +114,15 @@ stop_tunnel() {
   rm -f "$KS/sb.pid"; sleep 2
 }
 
+# Демон наблюдателя: bootout асинхронный — ждать выгрузки и выхода enforce; bootstrap сразу после bootout может
+# вернуть «5: Input/output error» — повторять.
+daemon_down() {
+  launchctl bootout "system/$LABEL" 2>&1
+  s=$(wait_for 20 sh -c "! launchctl print system/$LABEL >/dev/null 2>&1 && ! pgrep -f 'killswitch enforce'")
+  echo "демон выгружен, enforce завершён через $s с"
+}
+daemon_up() { wait_for 20 launchctl bootstrap system "$PLIST"; }
+
 # Сброс всего нашего: штатный uninstall, затем вручную (на случай сломанного бинарника); pfctl -d — только
 # если pf был выключен до прогона (одноразовая ВМ, в продукт не переносится).
 reset_all() {

@@ -155,6 +155,14 @@ jobs:
         timeout-minutes: 30
         run: ./ci/windows/live.ps1
 
+      - name: WireGuardNT transport (driver tunnel without app-id)
+        if: success() || failure()
+        timeout-minutes: 8
+        env:
+          WG_VERSION: '0.5.3'
+          WG_SHA256: ''
+        run: ./ci/windows/wgnt.ps1
+
       - name: cleanup
         if: always()
         timeout-minutes: 3

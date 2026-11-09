@@ -7,7 +7,7 @@ $resolver = $env:KS_RESOLVER
 Write-Host "физический интерфейс: $nic, резолвер DHCP: $resolver"
 & "$env:KS\wfptool.exe" collect
 Write-Config
-$tg = Start-Process python -ArgumentList "$PSScriptRoot\..\targets.py", '127.0.0.2', '1500' -PassThru -NoNewWindow `
+$tg = Start-Process python -ArgumentList "$PSScriptRoot\..\targets.py", '127.0.0.2', '1500', '18080' -PassThru -NoNewWindow `
     -RedirectStandardOutput "$env:KS\targets.log" -RedirectStandardError "$env:KS\targets.err.log"
 
 Write-Host '== S2: on, туннель опущен'
@@ -18,7 +18,7 @@ Expect-Probe 'S2.trusted-passes' $true 'probe-allowed' 'http://1.1.1.1/'
 & "$env:KS\live.test.exe" '-test.run=^(TestLiveEvidence|TestLiveCollectionRestored)$' '-test.v'
 Check 'S2.evidence' ($LASTEXITCODE -eq 0) "live.test TestLiveEvidence (отброс нашим фильтром): код $LASTEXITCODE"
 $srv = Start-Process python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1' -PassThru -WindowStyle Hidden
-Start-Sleep 3
+Wait-For 20 { Curl-Ok 'probe-allowed' 'http://127.0.0.1:8765/' } | Out-Null
 Expect-Probe 'S1.loopback' $true 'probe-denied' 'http://127.0.0.1:8765/'
 Stop-Process $srv -ErrorAction SilentlyContinue
 Install-Service
@@ -33,6 +33,14 @@ if (Get-NetRoute -DestinationPrefix '::/0' -ErrorAction SilentlyContinue | Where
     Expect-Probe 'S1.direct-v6-blocked' $false 'probe-denied' 'http://[2606:4700:4700::1111]/'
 } else {
     Result 'S1.direct-v6-blocked' 'NOT_TESTED' 'на раннере нет маршрута ::/0'
+}
+$nat = Get-NetAdapter -Name 'vEthernet (nat)' -ErrorAction SilentlyContinue
+if ($nat) {
+    # Второй «физический» адаптер раннера — Hyper-V NAT без маршрута к цели: пробы через него без ответа и без
+    # отброса (INCONCLUSIVE). Факт фиксируется, затем адаптер выключается на одноразовой ВМ для проверки кода 0.
+    $out = & $KsExe check 2>&1 | Out-String; $code = $LASTEXITCODE; Write-Host $out
+    Result 'S9.check-with-nat-adapter' 'INFO' "check при vEthernet (nat): код $code"
+    Disable-NetAdapter -Name 'vEthernet (nat)' -Confirm:$false
 }
 Expect-Code 'S9.check-tunnel-up' 0 { & $KsExe check }
 
@@ -67,7 +75,7 @@ $s = Wait-For 60 { Curl-Ok 'probe-denied' 'http://1.1.1.1/' }
 Check 'S4.first' ($s -ge 0) "выход через ks-tun2: через $s с"
 Stop-Tunnel
 $leaks = 0; $tries = 0
-$sb = Start-Tunnel 'ks-tun3'
+$adapterUp = Start-Tunnel 'ks-tun3'
 $end = (Get-Date).AddSeconds(60); $back = -1; $t = Get-Date
 while ((Get-Date) -lt $end) {
     $tries++
@@ -75,7 +83,7 @@ while ((Get-Date) -lt $end) {
     if (-not (Probe-Blocked 'probe-denied' 'http' '1.1.1.1' $nic)) { $leaks++ }
     if (Curl-Ok 'probe-denied' 'http://1.1.1.1/') { $back = [int]((Get-Date) - $t).TotalSeconds; break }
 }
-Check 'S4.reconnect' ($back -ge 0) "выход через новый адаптер ks-tun3 вернулся через $back с после старта (адаптер за $sb с)"
+Check 'S4.reconnect' ($back -ge 0) "выход через новый адаптер ks-tun3 вернулся через $back с после старта (адаптер за $adapterUp с)"
 Check 'S4.no-leak-window' ($leaks -eq 0) "прямых проб в окне: $tries циклов, утечек $leaks"
 Stop-Tunnel
 

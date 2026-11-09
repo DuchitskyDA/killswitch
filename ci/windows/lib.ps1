@@ -84,7 +84,7 @@ function Write-Config([bool]$Lan = $true, [string]$Dns = 'open') {
 }
 
 # Туннель стенда — sing-box TUN без strict_route: 1.1.1.1 — настоящий выход через туннель (sing-box доверен),
-# 203.0.113.10 → цели check и dns.health на 127.0.0.2, резолвер DHCP — чтобы системный DNS шёл через TUN.
+# 203.0.113.10 → цели check и dns.health на 127.0.0.2 (HTTP — на 18080: порт 80 на loopback держит система), резолвер DHCP — чтобы системный DNS шёл через TUN.
 function Start-Tunnel($name) {
     $cfg = [ordered]@{
         log       = @{ level = 'warn'; timestamp = $true }
@@ -93,6 +93,7 @@ function Start-Tunnel($name) {
                 stack = 'gvisor'; route_address = @('1.1.1.1/32', '203.0.113.10/32', "$env:KS_RESOLVER/32") })
         outbounds = @(@{ type = 'direct'; tag = 'direct' })
         route     = [ordered]@{ rules = @(@{ action = 'sniff' }, @{ protocol = 'dns'; action = 'hijack-dns' },
+                @{ ip_cidr = @('203.0.113.10/32'); port = 80; action = 'route-options'; override_port = 18080 },
                 @{ ip_cidr = @('203.0.113.10/32'); action = 'route-options'; override_address = '127.0.0.2' })
             final = 'direct'; auto_detect_interface = $true }
     }

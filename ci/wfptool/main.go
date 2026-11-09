@@ -130,7 +130,7 @@ func strip() (int, error) {
 }
 
 func collect() (int, error) {
-	s, err := wf.New(&wf.Options{Name: "ks-ci-collect", Dynamic: true})
+	s, err := wf.New(&wf.Options{Name: "ks-ci-collect"}) // опция движка не ставится из dynamic-сессии
 	if err != nil {
 		return 2, err
 	}

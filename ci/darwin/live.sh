@@ -44,7 +44,7 @@ printf '$ live.test\n'
 env KS_PROBE_USER="$PROBE_USER" "$KS/live.test" -test.run "^TestLive" -test.v 2>&1
 check S2.evidence $? "live.test: отброс правилом пробы, BindControl, Status"
 /usr/bin/python3 -m http.server 18080 --bind 127.0.0.1 >/dev/null 2>&1 &
-srv=$!; sleep 2
+srv=$!; wait_for 15 /usr/bin/curl -s -o /dev/null http://127.0.0.1:18080/ >/dev/null
 http_ok http://127.0.0.1:18080/; check S1.lo0 $? "ksprobe → 127.0.0.1:18080"
 kill "$srv" 2>/dev/null
 
@@ -107,19 +107,18 @@ not http_ok; check S6.on-again-blocked $? "on снова закрыл"
 log "S7: перезапуск демона до старта клиента"
 launchctl kickstart -k "system/$LABEL"
 not http_ok; check S7.kickstart-blocked $? "сразу после kickstart -k проба закрыта"
-launchctl bootout "system/$LABEL" 2>&1
+daemon_down
 not http_ok; check S7.daemon-stopped-blocked $? "демон снят — правила якоря на месте ($(anchor_rules))"
-launchctl bootstrap system "$PLIST" 2>&1
-s=$(wait_for 20 launchctl print "system/$LABEL"); [ "$s" != FAIL ]; check S7.daemon-back $? "демон загружен через $s с"
+s=$(daemon_up); [ "$s" != FAIL ]; check S7.daemon-back $? "демон загружен через $s с"
 not http_ok; check S7.daemon-started-blocked $? "проба закрыта"
 
 log "S9, S10: правила сняты вручную"
-launchctl bootout "system/$LABEL" 2>&1
+daemon_down
 pfctl -q -a "$ANCHOR" -F all
+http_ok; check S9.leak-real $? "без правил ksprobe выходит — утечка настоящая (правил в якоре $(anchor_rules))"
 expect S9.check-stripped 4 "$BIN" check
 expect S9.status-stripped 4 "$BIN" status
-http_ok; check S9.leak-real $? "без правил ksprobe выходит — утечка настоящая"
-launchctl bootstrap system "$PLIST" 2>&1
+daemon_up >/dev/null
 s=$(wait_for 60 sh -c "[ \$(pfctl -a '$ANCHOR' -sr 2>/dev/null | grep -c .) -gt 0 ] && '$BIN' status"); [ "$s" != FAIL ]
 check S10.restored-flush $? "демон восстановил якорь через $s с"
 pfctl -d 2>&1
@@ -143,7 +142,7 @@ expect S8.off 0 "$BIN" off
 printf '{"gen": 7, "mode": "off", broken' > "$DIR/state.json"
 launchctl kickstart -k "system/$LABEL"
 s=$(wait_for 60 not http_ok); [ "$s" != FAIL ]; check S8.corrupt-failclosed $? "state.json испорчен в off: демон вернул on через $s с"
-launchctl bootout "system/$LABEL" 2>&1
+daemon_down
 for v in on off on off on; do
   "$BIN" "$v" >/dev/null 2>&1 &
   p=$!; sleep "$(awk 'BEGIN{srand(); printf "%.2f", 0.02 + rand() * 0.4}')"; kill -9 "$p" 2>/dev/null; wait "$p" 2>/dev/null
