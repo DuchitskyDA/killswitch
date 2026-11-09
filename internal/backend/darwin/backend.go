@@ -137,6 +137,11 @@ func (b *Backend) Apply(r backend.Ruleset) error {
 			return err
 		}
 	}
+	// Запись снимается до загрузки: любой сбой дальше (загрузка, токен, сброс) — дрейф, и enforce повторит Apply,
+	// даже если план тот же, что записан.
+	if err := removeIfExists(b.paths.loadedFile()); err != nil {
+		return err
+	}
 	loaded, err := b.load(rules.Text)
 	if err != nil {
 		return err

@@ -184,17 +184,43 @@ func TestApplyLeavesForeignRuleAboveAnchor(t *testing.T) {
 	}
 }
 
-func TestApplyFailedLoadKeepsPreviousRecord(t *testing.T) {
+// Сбой загрузки: прежние правила pf остаются (pfctl грузит якорь атомарно), а запись снята —
+// enforce видит дрейф и повторяет Apply, а не фиксирует несостоявшийся переход.
+func TestApplyFailedLoadLeavesDriftForRetry(t *testing.T) {
 	f := newFixture(t)
 	f.healthy()
-	first := onRules()
-	f.apply(first)
+	f.apply(onRules())
 	f.run.fails["pfctl -a "+Anchor+" -f "+f.paths.rulesFile()+".new"] = true
-	if err := f.b.Apply(Rules{Mode: "on", Text: headerMode + "on\nblock return out quick all\n"}); err == nil {
+	if err := f.b.Apply(onRules()); err == nil {
 		t.Fatal("сбой загрузки якоря — ошибка Apply")
 	}
-	if s := status(t, f.b); s.Hash != backend.HashOf(first) {
-		t.Error("после сбоя загрузки остаётся прежний набор")
+	if repair, ok := kinds(status(t, f.b))["anchor-drift"]; !ok || !repair || f.run.called("pfctl -a "+Anchor+" -F") {
+		t.Error("после сбоя загрузки: дрейф с Repair, прежние правила якоря не сброшены")
+	}
+}
+
+// Повторный Apply того же плана с упавшим сбросом состояний не должен выглядеть завершённым.
+func TestReapplySamePlanFailedFlushLeavesDrift(t *testing.T) {
+	f := newFixture(t)
+	f.healthy()
+	r := onRules()
+	f.apply(r)
+	f.run.fails["pfctl -F states"] = true
+	if err := f.b.Apply(r); err == nil {
+		t.Fatal("сбой сброса состояний — ошибка Apply")
+	}
+	if s := status(t, f.b); s.Hash == backend.HashOf(r) {
+		t.Error("незавершённый повтор того же плана: хеш не должен совпасть, enforce применит заново")
+	}
+}
+
+func TestApplyKeepsOneOwnToken(t *testing.T) {
+	f := newFixture(t)
+	f.healthy()
+	f.run.replies["pfctl -s References"] = []Result{{Out: refsOurs + "813      killswitchd                 18446744071234567892      5 secs ago\n"}}
+	f.apply(onRules())
+	if !f.run.called("pfctl -X 18446744071234567892") || f.run.called("pfctl -X 18446744071234567890") || f.run.called("killswitchd -E") {
+		t.Errorf("два своих токена: лишний отпущен, первый оставлен, новый не берётся; вызовы %q", f.run.calls)
 	}
 }
 
