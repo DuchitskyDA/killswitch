@@ -1,0 +1,27 @@
+# OpenVPN (community): адаптеры установщика на Windows, tun<N> на Linux, utun на macOS.
+name = "openvpn"
+description = "OpenVPN: адаптеры TAP-Windows6 и Data Channel Offload / tun* / utun*"
+
+verified_on = []
+
+[windows]
+# Следующие адаптеры tapctl называет с суффиксом « #2», « #3»…
+interfaces = [
+  "OpenVPN TAP-Windows6",
+  "OpenVPN TAP-Windows6 #*",
+  "OpenVPN Data Channel Offload",
+  "OpenVPN Data Channel Offload #*",
+]
+programs = ['C:\Program Files\OpenVPN\bin\openvpn.exe']
+detect = ['C:\Program Files\OpenVPN\bin\openvpn.exe']
+
+[linux]
+interfaces = ["tun*"]
+# С user/group в конфиге openvpn сбрасывает права: тогда задайте этого пользователя.
+users = ["root"]
+detect = ["/usr/sbin/openvpn"]
+
+[darwin]
+interfaces = ["utun*"]
+users = ["root"]
+detect = ["/opt/homebrew/sbin/openvpn", "/usr/local/sbin/openvpn"]

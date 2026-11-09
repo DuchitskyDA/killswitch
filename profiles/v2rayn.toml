@@ -1,0 +1,23 @@
+# v2rayN: TUN через sing-box, ядра в bin/<ядро>/ рядом с программой.
+name = "v2rayn"
+description = "v2rayN: адаптер singbox_tun, ядра xray и sing-box"
+
+verified_on = []
+
+[windows]
+interfaces = ["singbox_tun"]
+# Только установка без права записи в каталог (WinGet): ядра в %LOCALAPPDATA%\v2rayN.
+# Портативную копию задайте в конфиге: [[trust]] kind = "program".
+programs = ['C:\Users\*\AppData\Local\v2rayN\bin\*\*.exe']
+detect = ['C:\Users\*\AppData\Local\v2rayN\bin\*\*.exe']
+
+[linux]
+interfaces = ["singbox_tun"]
+# Ядра TUN v2rayN запускает через sudo.
+users = ["root"]
+detect = ["/opt/v2rayN", "/usr/bin/v2rayn"]
+
+[darwin]
+interfaces = ["utun*"]
+users = ["root"]
+detect = ["/Applications/v2rayN.app"]

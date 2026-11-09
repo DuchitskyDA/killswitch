@@ -1,0 +1,19 @@
+# sing-box (CLI): TUN без interface_name — tun<N>, на macOS — utun<N>.
+name = "sing-box"
+description = "sing-box: адаптер sing-tun Tunnel / tun<N> / utun<N>"
+
+verified_on = []
+
+[windows]
+# Описание адаптера sing-tun; программу (sing-box.exe) задайте в конфиге: [[trust]] kind = "program".
+interfaces = ["sing-tun Tunnel*"]
+
+[linux]
+interfaces = ["tun*"]
+users = ["root"]
+detect = ["/usr/bin/sing-box"]
+
+[darwin]
+interfaces = ["utun*"]
+users = ["root"]
+detect = ["/opt/homebrew/bin/sing-box", "/usr/local/bin/sing-box"]
