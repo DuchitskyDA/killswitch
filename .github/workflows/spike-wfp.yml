@@ -143,6 +143,27 @@ jobs:
           Expect 'T5.after-remove.denied-http' $true (Probe $Denied http '1.1.1.1:80')
           Disarm-Watchdog
 
+      - name: T5d watchdog fires and removes persistent + boot-time
+        timeout-minutes: 5
+        continue-on-error: true
+        run: |
+          . spike/wfp/ci.ps1; Summary-Header 'T5d'
+          C:\ks\bin\wfpspike.exe t5-setup
+          Arm-Watchdog 1
+          $t0 = Get-Date; $cleared = $false
+          while (((Get-Date) - $t0).TotalSeconds -lt 180) {
+            Start-Sleep 10
+            $st = (C:\ks\bin\wfpspike.exe state | Select-String '^STATE').Line
+            Write-Host "$([int]((Get-Date)-$t0).TotalSeconds) s: $st"
+            if ($st -match 'filters=0 ' -and $st -match 'provider=false') { $cleared = $true; break }
+          }
+          Result 'T5.watchdog.cleared' $(if ($cleared) { 'PASS' } else { 'FAIL' }) "задача SYSTEM сняла наше за $([int]((Get-Date)-$t0).TotalSeconds) с: $st"
+          Expect 'T5.watchdog.after.denied-http' $true (Probe $Denied http '1.1.1.1:80')
+          $n = Snapshot-Netsh 'watchdog'
+          Result 'T5.watchdog.boottimepolicy' $(if ($n.Boot -eq 0) { 'PASS' } else { 'FAIL' }) "наших в boottimepolicy: $($n.Boot) (всего $($n.Items))"
+          Disarm-Watchdog
+          C:\ks\bin\wfpspike.exe remove
+
       - name: T5c BFE restart with persistent + boot-time (last, may cut the runner)
         timeout-minutes: 8
         continue-on-error: true

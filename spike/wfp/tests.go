@@ -68,6 +68,7 @@ func (c *ctx) mustApply(s *wf.Session, id string, rules []*wf.Rule) bool {
 
 func t1(c *ctx) {
 	b := c.baseline("T1")
+	t1Tie(c, b)
 	for _, hard := range []bool{false, true} {
 		tag := "T1.soft"
 		if hard {
@@ -103,6 +104,45 @@ func t1(c *ctx) {
 		s.Close()
 	}
 	expect("T1.after-close.denied-http-v4", true, b.d4, c.probe(c.denied, "http", cfV4))
+}
+
+// t1Tie — ничья весов 0xFFFF: чужой sublayer без provider создан ДО нашего,
+// с GUID ниже и выше нашего, hard permit для denied; наш block soft и hard.
+func t1Tie(c *ctx, b baseline) {
+	id, err := wf.AppID(c.denied)
+	if err != nil {
+		result("T1.tie", "FAIL", "AppID: %v", err)
+		return
+	}
+	for _, fg := range []string{"00000001-0000-0000-0000-000000000000", "fffffffe-ffff-ffff-ffff-ffffffffffff"} {
+		for _, hard := range []bool{false, true} {
+			tag := fmt.Sprintf("T1.tie.foreign-%s.hard-block=%t", fg[:8], hard)
+			s := mustSession(true, "ks-spike-tie")
+			slID := wf.SublayerID(mustGUID(fg))
+			if err := s.AddSublayer(&wf.Sublayer{ID: slID, Name: "ks-spike-foreign-tie", Weight: 0xFFFF}); err != nil {
+				result(tag, "FAIL", "AddSublayer: %v", err)
+				s.Close()
+				continue
+			}
+			var rules []*wf.Rule
+			for _, l := range aleLayers {
+				name := fmt.Sprintf("ks-spike/tie-%s/%s", fg[:8], layerNames[l])
+				rules = append(rules, &wf.Rule{ID: ruleKey(name), Name: name, Layer: l, Sublayer: slID, Weight: 100,
+					Action: wf.ActionPermit, HardAction: true,
+					Conditions: []*wf.Match{{Field: wf.FieldALEAppID, Op: wf.MatchTypeEqual, Value: id}}})
+			}
+			if !c.mustApply(s, tag+".foreign", rules) {
+				s.Close()
+				continue
+			}
+			if err := addBase(s, false); err == nil &&
+				c.mustApply(s, tag+".ours", Plan{Tag: "tie", Block: true, HardBlock: hard, Loopback: true, Apps: c.appPermits(c.allowed)}.Rules()) {
+				expect(tag+".denied", false, b.d4, c.probe(c.denied, "http", cfV4))
+				expect(tag+".allowed", true, b.a4, c.probe(c.allowed, "http", cfV4))
+			}
+			s.Close()
+		}
+	}
 }
 
 // t1Arbitration — чужой sublayer с hard permit (clear action right) для denied:
@@ -381,6 +421,7 @@ func t3(c *ctx) {
 	expect("T3.alone.via-tun-http", true, b.d4, c.probe(c.denied, "http", cfV4))
 	expect("T3.alone.direct-http", true, b.d4b, c.probe(c.denied, "http", cfV4b))
 	result("T3.alone.denied-dns-8.8.8.8", "INFO", "%s", c.probe(c.denied, "dns", dnsV4))
+	result("T3.alone.loopback-v6", "INFO", "::1 при sing-tun (у него block всего V6): %s", c.pair(c.denied, c.denied, loV6))
 	resolveCheck("T3.alone.resolver")
 	foreignWFP(before)
 	sb.stop()
@@ -394,6 +435,7 @@ func t3(c *ctx) {
 		expect(tag+".denied-direct", false, b.d4b, c.probe(c.denied, "http", cfV4b))
 		expect(tag+".denied-dns-direct", false, b.ddns, c.probe(c.denied, "dns", dnsV4))
 		expect(tag+".allowed-direct", true, b.a4, c.probe(c.allowed, "http", cfV4b))
+		result(tag+".loopback-v6", "INFO", "::1 (наш permit loopback + sing-tun block V6): %s", c.pair(c.denied, c.denied, loV6b))
 		resolveCheck(tag + ".resolver")
 	}
 
