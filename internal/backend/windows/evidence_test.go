@@ -96,3 +96,17 @@ func TestCollectionLeftOnWhenAlreadyOn(t *testing.T) {
 		t.Errorf("чужой включённый сбор не трогаем: on=%v sets=%d", c.on, c.sets)
 	}
 }
+
+// Одно состояние на весь check: после нашей уборки чужое включение между пробами не трогаем.
+func TestCollectionOwnershipNotStaleAcrossProbes(t *testing.T) {
+	c := &fakeCollector{}
+	var st evidenceState
+	_ = prepareCollection(c, &st)
+	finishCollection(c, &st)
+	c.on = true // включил кто-то другой
+	_ = prepareCollection(c, &st)
+	finishCollection(c, &st)
+	if !c.on {
+		t.Error("чужой включённый между пробами сбор выключен нашей уборкой")
+	}
+}

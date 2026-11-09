@@ -61,3 +61,19 @@ func TestAfterProbeOncePerPreparerFailure(t *testing.T) {
 	eq(t, res.Overall, Inconclusive)
 	eq(t, len(ev.finished), len(Services))
 }
+
+// orderedEvidence запоминает, сколько проб было отправлено к моменту каждого AfterProbe.
+type orderedEvidence struct {
+	finishingEvidence
+	p         *fakeProber
+	sentAtEnd []int
+}
+
+func (o *orderedEvidence) AfterProbe(ProbeID) { o.sentAtEnd = append(o.sentAtEnd, len(o.p.sent)) }
+
+func TestAfterProbeRunsAfterTheProbeIsSent(t *testing.T) {
+	p := &fakeProber{}
+	ev := &orderedEvidence{finishingEvidence: finishingEvidence{dropped: true}, p: p}
+	Run(context.Background(), oneTarget, p, ev, now)
+	eq(t, ev.sentAtEnd, []int{1, 2, 3, 4})
+}
