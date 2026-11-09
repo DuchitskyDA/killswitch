@@ -75,7 +75,8 @@ jobs:
             os=${t%/*}; arch=${t#*/}; ext=; [ "$os" = windows ] && ext=.exe
             GOOS=$os GOARCH=$arch go build -trimpath -ldflags='-s -w' -o "dist/release/killswitch-$os-$arch$ext" ./cmd/killswitch
           done
-          cd dist/release && sha256sum killswitch-* > SHA256SUMS && cat SHA256SUMS
+          cp dist/windows/menu.ps1 dist/release/menu.ps1
+          cd dist/release && sha256sum killswitch-* menu.ps1 > SHA256SUMS && cat SHA256SUMS
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: killswitch-${{ github.sha }}
