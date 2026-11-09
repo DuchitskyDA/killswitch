@@ -77,11 +77,14 @@ func (e TunnelEvidence) String() string {
 	return s
 }
 
-// ClassifyTunnel: OK — ответ пришёл и сервер видел не физический адрес клиента; PATH-LEAK — пакеты к цели ушли мимо туннеля.
+// ClassifyTunnel: OK — ответ пришёл и сервер видел не физический адрес клиента; PATH-LEAK — пакеты к цели ушли мимо туннеля;
+// INCONCLUSIVE — окно захвата не подтверждено, отсутствие прямой утечки не доказано.
 func ClassifyTunnel(e TunnelEvidence) (Verdict, string) {
 	switch {
 	case e.Direct > 0:
 		return PathLeak, e.String()
+	case !e.Window:
+		return Inconclusive, "захват на WAN не подтвердил окно: " + e.String()
 	case e.AppOK && e.Via > 0:
 		return TunnelOK, e.String()
 	default:

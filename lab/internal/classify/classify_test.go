@@ -38,6 +38,8 @@ func TestClassifyTunnel(t *testing.T) {
 		{"connect без ответа (SYN-ACK от TUN-стека)", TunnelEvidence{Window: true, Via: 0}, TunnelFail},
 		{"ответ есть, но сервер видел физический адрес", TunnelEvidence{Window: true, AppOK: true, Direct: 2}, PathLeak},
 		{"ответ без записи получателя", TunnelEvidence{Window: true, AppOK: true}, TunnelFail},
+		{"один прямой пакет мимо туннеля", TunnelEvidence{Window: true, AppOK: true, Via: 1, Direct: 1}, PathLeak},
+		{"окно захвата не подтверждено", TunnelEvidence{Window: false, AppOK: true, Via: 1}, Inconclusive},
 	}
 	for _, c := range cases {
 		if got, why := ClassifyTunnel(c.e); got != c.want {
