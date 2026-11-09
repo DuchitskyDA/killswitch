@@ -110,8 +110,14 @@ feth_up() {
   sleep 1
   # Пересозданный feth наследует устаревшую клонированную запись — без удаления ndp -s не встаёт (прогон 3, шаг 3b D).
   ndp -d "$v6::2" >/dev/null 2>&1; route -n delete -inet6 "$v6::2" >/dev/null 2>&1
-  ndp -s "$v6::2" 02:00:00:00:00:02 2>&1
-  ndp -an | grep "$v6::2 " | grep -q permanent || echo "feth$a: статическая NDP-запись не встала"
+  ndp -s "$v6::2" 02:00:00:00:00:02 >&2 2>&1
+  if ! ndp -an | grep "$v6::2 " | grep -q permanent; then
+    echo "feth$a: ndp -s не встал, ndp -c и повтор" >&2
+    ndp -an | grep -i 2001:db8 >&2
+    ndp -c >/dev/null 2>&1
+    ndp -s "$v6::2" 02:00:00:00:00:02 >&2 2>&1
+  fi
+  echo "feth$a NDP: $(ndp -an | grep "$v6::2 " | tr -s ' ' | tr '\n' ';')" >&2
   return 0
 }
 feth_down() {
