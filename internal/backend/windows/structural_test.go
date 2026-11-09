@@ -1,6 +1,7 @@
 package windows
 
 import (
+	"net/netip"
 	"testing"
 
 	"github.com/DuchitskyDA/killswitch/internal/policy"
@@ -90,5 +91,73 @@ func TestMissingPersistentBlockIsRepairable(t *testing.T) {
 func TestFullSetHasNoMissing(t *testing.T) {
 	if got := MissingFindings(ownOn(t)); len(got) != 0 {
 		t.Errorf("полный набор без находок: %+v", got)
+	}
+}
+
+func strictPolicy() policy.Policy {
+	p := basePolicy(policy.ModeOn)
+	p.TrustMode = policy.TrustStrict
+	p.Trust[0].Destinations = policy.DestEndpoints
+	p.Tunnel.Endpoints = []policy.Endpoint{{Host: "203.0.113.2", Port: 443, Proto: policy.ProtoTCP}}
+	return p
+}
+
+var clientAbove = []SublayerInfo{{ID: "{client}", Weight: 0xFFFF}, {ID: oursID, Weight: 0xFFFE}}
+
+// strict: наш permit пускает программу только к Endpoints, чужой hard permit — куда угодно.
+func TestTieStrictForeignPermitBeyondEndpointsIsLeak(t *testing.T) {
+	f := foreignPermitAll("{client}")
+	f.Conds = []Cond{{Field: FieldAppID, AppID: happApp}}
+	if got := TieFindings(clientAbove, oursID, []ForeignFilter{f}, plan(t, strictPolicy(), baseEnv()).Filters); len(got) != 1 {
+		t.Errorf("permit программы мимо Endpoints в strict — утечка: %+v", got)
+	}
+}
+
+// strict: чужой hard permit той же программы строго к нашему endpoint — внутри нашей области.
+func TestTieStrictForeignPermitWithinEndpointIsFine(t *testing.T) {
+	f := foreignPermitAll("{client}")
+	f.Conds = []Cond{{Field: FieldAppID, AppID: happApp}, {Field: FieldProto, Proto: ProtoTCP},
+		{Field: FieldRemotePort, Port: 443}, {Field: FieldRemoteAddr, Prefix: netip.MustParsePrefix("203.0.113.2/32")}}
+	if got := TieFindings(clientAbove, oursID, []ForeignFilter{f}, plan(t, strictPolicy(), baseEnv()).Filters); len(got) != 0 {
+		t.Errorf("permit строго к нашему endpoint — не утечка: %+v", got)
+	}
+}
+
+// strict: тот же app-id, протокол и порт, но другой адрес — вне нашего endpoint.
+func TestTieStrictForeignPermitOtherAddressIsLeak(t *testing.T) {
+	f := foreignPermitAll("{client}")
+	f.Conds = []Cond{{Field: FieldAppID, AppID: happApp}, {Field: FieldProto, Proto: ProtoTCP},
+		{Field: FieldRemotePort, Port: 443}, {Field: FieldRemoteAddr, Prefix: netip.MustParsePrefix("198.51.100.9/32")}}
+	if got := TieFindings(clientAbove, oursID, []ForeignFilter{f}, plan(t, strictPolicy(), baseEnv()).Filters); len(got) != 1 {
+		t.Errorf("permit программы к чужому адресу в strict — утечка: %+v", got)
+	}
+}
+
+// repair: «app-id != другой программы» включает программу repair — пересекается с block 30.
+func TestTieRepairForeignPermitNotOtherProgramIsLeak(t *testing.T) {
+	f := foreignPermitAll("{client}")
+	f.Conds = []Cond{{Field: FieldAppID, Op: OpNeq, AppID: `\device\harddiskvolume3\other\other.exe`}}
+	own := plan(t, basePolicy(policy.ModeRepair), baseEnv()).Filters
+	if got := TieFindings(clientAbove, oursID, []ForeignFilter{f}, own); len(got) != 1 {
+		t.Errorf("permit «кроме другой программы» в repair — утечка: %+v", got)
+	}
+}
+
+// repair: программа из Repair.Programs должна блокироваться (block 30), чужой hard permit это обходит.
+func TestTieRepairForeignPermitOfRepairProgramIsLeak(t *testing.T) {
+	f := foreignPermitAll("{client}")
+	f.Conds = []Cond{{Field: FieldAppID, AppID: happApp}}
+	own := plan(t, basePolicy(policy.ModeRepair), baseEnv()).Filters
+	if got := TieFindings(clientAbove, oursID, []ForeignFilter{f}, own); len(got) != 1 {
+		t.Errorf("permit программы из repair — утечка: %+v", got)
+	}
+}
+
+// Непонятное условие поля app-id (ИЛИ внутри поля) могло расширить область — такой permit не считается нашим.
+func TestTieUnknownConditionOnKnownFieldIsLeak(t *testing.T) {
+	f := foreignPermitAll("{client}")
+	f.Conds = []Cond{{Field: FieldAppID, AppID: happApp}, {Field: FieldAppID, Raw: "ALE_APP_ID pfx x"}}
+	if got := TieFindings(clientAbove, oursID, []ForeignFilter{f}, ownOn(t)); len(got) != 1 {
+		t.Errorf("непонятное условие на поле app-id — утечка: %+v", got)
 	}
 }
