@@ -1,0 +1,31 @@
+{
+  "log": { "level": "info", "timestamp": true },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "ks-tun",
+      "address": ["172.19.0.1/30"],
+      "auto_route": true,
+      "strict_route": true,
+      "route_address": ["1.1.1.1/32"],
+      "stack": "system"
+    }
+  ],
+  "outbounds": [
+    { "type": "direct", "tag": "direct" }
+  ],
+  "dns": {
+    "servers": [
+      { "type": "udp", "tag": "dns-udp", "server": "168.63.129.16", "server_port": 53 }
+    ]
+  },
+  "route": {
+    "rules": [
+      { "action": "sniff" },
+      { "protocol": "dns", "action": "hijack-dns" }
+    ],
+    "final": "direct",
+    "auto_detect_interface": true
+  }
+}
