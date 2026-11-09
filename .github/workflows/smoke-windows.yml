@@ -37,10 +37,14 @@ jobs:
         timeout-minutes: 6
         run: |
           go vet ./...
-          go test ./internal/backend/windows ./internal/third_party/wf ./cmd/killswitch
+          if ($LASTEXITCODE) { throw "go vet: $LASTEXITCODE" }
+          # cmd/killswitch здесь не гоняется: его TestBackendNotImplementedIsApplyError вызывает настоящий backend.
+          go test ./internal/backend/windows ./internal/third_party/wf
+          if ($LASTEXITCODE) { throw "go test: $LASTEXITCODE" }
           New-Item -ItemType Directory -Force "$env:KS\probe-allowed", "$env:KS\probe-denied", "$env:KS\probe-other", 'C:\ProgramData\killswitch' | Out-Null
           go build -o "$env:KS\killswitch.exe" ./cmd/killswitch
           go test -tags wfplive -c -o "$env:KS\live.test.exe" ./internal/backend/windows
+          if ($LASTEXITCODE) { throw "build live: $LASTEXITCODE" }
           foreach ($d in 'probe-allowed', 'probe-denied', 'probe-other') { Copy-Item "$env:SystemRoot\System32\curl.exe" "$env:KS\$d\" }
 
       - name: Smoke helpers
@@ -118,7 +122,7 @@ jobs:
       - name: evidence — drop event of our filter
         timeout-minutes: 3
         run: |
-          & "$env:KS\live.test.exe" -test.run 'TestLiveEvidence$' -test.v
+          & "$env:KS\live.test.exe" '-test.run=^TestLiveEvidence$' '-test.v'
           if ($LASTEXITCODE -ne 0) { throw "TestLiveEvidence: $LASTEXITCODE" }
 
       - name: off and repair (after the CLI process exits)
@@ -146,7 +150,7 @@ jobs:
       - name: tie 0xFFFF — foreign sublayer before ours is LEAK
         timeout-minutes: 3
         run: |
-          & "$env:KS\live.test.exe" -test.run 'TestLiveTie$' -test.v
+          & "$env:KS\live.test.exe" '-test.run=^TestLiveTie$' '-test.v'
           if ($LASTEXITCODE -ne 0) { throw "TestLiveTie: $LASTEXITCODE" }
           . "$env:KS\smoke.ps1"
           Expect-Code 'status-after-tie' 0 { & $KsExe status }
@@ -173,7 +177,7 @@ jobs:
           . "$env:KS\smoke.ps1"
           Remove-Item $env:KS_CONFIG
           Expect-Code 'uninstall' 0 { & ./dist/windows/menu.ps1 -Action uninstall }
-          Expect-Code 'gone' 0 { & "$env:KS\live.test.exe" -test.run 'TestLiveGone$' -test.v }
+          Expect-Code 'gone' 0 { & "$env:KS\live.test.exe" '-test.run=^TestLiveGone$' '-test.v' }
           Expect-Probe 'after-uninstall-denied-passes' $true 'probe-denied' 'http://1.1.1.1/'
           netsh wfp show boottimepolicy file="$env:KS\boottime.xml" | Out-Null
           Expect-Output 'boottime-clean' 'False' { (Get-Content "$env:KS\boottime.xml" -Raw).Contains('killswitch') }
