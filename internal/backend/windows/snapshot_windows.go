@@ -152,12 +152,8 @@ func routes(p policy.Policy, e env.Env) map[netip.Addr]env.Route {
 	}
 	out := map[netip.Addr]env.Route{}
 	for _, a := range targets {
-		var sa xwin.Sockaddr = &xwin.SockaddrInet4{Addr: a.Unmap().As4()}
-		if !a.Unmap().Is4() {
-			sa = &xwin.SockaddrInet6{Addr: a.As16()}
-		}
 		var idx uint32
-		if err := xwin.GetBestInterfaceEx(sa, &idx); err != nil {
+		if err := xwin.GetBestInterfaceEx(sockaddrOf(a), &idx); err != nil {
 			continue
 		}
 		out[a] = env.Route{IfaceIndex: int(idx), ViaTunnel: tunnel[int(idx)]}
@@ -177,4 +173,12 @@ func bootID() (string, error) {
 	}
 	up := time.Duration(xwin.DurationSinceBoot())
 	return "boottime:" + time.Now().Add(-up).UTC().Truncate(time.Minute).Format(time.RFC3339), nil
+}
+
+// sockaddrOf — адрес для GetBestInterfaceEx по семейству (IPv4-в-IPv6 — как IPv4).
+func sockaddrOf(a netip.Addr) xwin.Sockaddr {
+	if a = a.Unmap(); a.Is4() {
+		return &xwin.SockaddrInet4{Addr: a.As4()}
+	}
+	return &xwin.SockaddrInet6{Addr: a.As16()}
 }

@@ -265,7 +265,7 @@ func (b *Backend) Status() (backend.Status, error) {
 		return backend.Status{}, err
 	}
 	st := backend.Status{Active: true, Mode: ModeOf(filters), Rules: len(filters), Hash: backend.HashOf(Ruleset{Filters: filters}),
-		Structural: append(structural, tie...), Details: details}
+		Structural: append(append(structural, MissingFindings(filters)...), tie...), Details: details}
 	return st, nil
 }
 

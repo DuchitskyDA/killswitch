@@ -26,6 +26,8 @@ func MatchDrop(d Drop, id probe.ProbeID, since time.Time, ours map[uint64]bool) 
 	}
 	remote := netip.AddrPortFrom(d.Remote.Addr().Unmap(), d.Remote.Port())
 	dst := netip.AddrPortFrom(id.Dst.Addr().Unmap(), id.Dst.Port())
+	src := id.Src.Addr().Unmap()
+	sameSrc := !src.IsValid() || src.IsUnspecified() || d.Local.Addr().Unmap() == src
 	return ours[d.FilterID] && !d.At.Before(since.Add(-clockSlack)) && d.Proto == proto &&
-		remote == dst && d.Local.Port() == id.Src.Port()
+		remote == dst && d.Local.Port() == id.Src.Port() && sameSrc
 }

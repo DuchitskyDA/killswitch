@@ -26,7 +26,21 @@ func PlanRules(p policy.Policy, e env.Env) (Ruleset, error) {
 		fs = append(fs, bootFilters(l)...)
 		fs = append(fs, overlay(p, e, l)...)
 	}
-	return Ruleset{Mode: p.Mode, Filters: fs}, nil
+	return Ruleset{Mode: p.Mode, Filters: unique(fs)}, nil
+}
+
+// unique убирает фильтры с одинаковой канонической строкой (одинаковые endpoint): у них один ключ WFP,
+// и Status прочитает один фильтр — план должен совпасть с прочитанным.
+func unique(fs []Filter) []Filter {
+	seen := map[string]bool{}
+	out := fs[:0:0]
+	for _, f := range fs {
+		if line := f.Line(); !seen[line] {
+			seen[line] = true
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // noSvchost: svchost по app-id не разрешается никогда (рев. 3) — ошибка конфига.

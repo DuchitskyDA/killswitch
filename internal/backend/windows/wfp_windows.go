@@ -116,7 +116,7 @@ func fromMatch(m *wf.Match) Cond {
 	case wf.MatchTypeNotEqual:
 		op = OpNeq
 	case wf.MatchTypeFlagsAllSet:
-		if v, ok := m.Value.(uint32); ok && m.Field == wf.FieldFlags && v == uint32(wf.ConditionFlagIsLoopback) {
+		if m.Field == wf.FieldFlags && flagValue(m.Value) == uint32(wf.ConditionFlagIsLoopback) {
 			return Cond{Field: FieldLoopback}
 		}
 		return raw
@@ -153,4 +153,15 @@ func fromMatch(m *wf.Match) Cond {
 		}
 	}
 	return raw
+}
+
+// flagValue — флаги условия: из WFP приходят uint32, из toMatch — wf.ConditionFlag.
+func flagValue(v any) uint32 {
+	switch f := v.(type) {
+	case uint32:
+		return f
+	case wf.ConditionFlag:
+		return uint32(f)
+	}
+	return 0
 }

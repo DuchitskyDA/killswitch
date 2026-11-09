@@ -95,3 +95,21 @@ func allWithin(cs []Cond, allowed map[string]bool) bool {
 	}
 	return true
 }
+
+// MissingFindings — provider есть, а persistent block на слое нет: защита не действует; повторный Apply чинит.
+func MissingFindings(filters []Filter) []probe.StructuralFinding {
+	have := map[Layer]bool{}
+	for _, f := range filters {
+		if f.Persistent && f.Action == Block && f.Weight == WeightBlock && f.Hard && len(f.Conds) == 0 {
+			have[f.Layer] = true
+		}
+	}
+	var out []probe.StructuralFinding
+	for _, l := range Layers {
+		if !have[l] {
+			out = append(out, probe.StructuralFinding{Kind: "wfp-missing", Repair: true,
+				Detail: fmt.Sprintf("нет persistent block на %s: защита не действует", l)})
+		}
+	}
+	return out
+}

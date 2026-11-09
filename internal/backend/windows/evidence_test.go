@@ -50,3 +50,12 @@ func TestMatchDropBeforeSince(t *testing.T) {
 		t.Error("событие раньше пробы — не её свидетельство")
 	}
 }
+
+func TestMatchDropOtherSourceAddr(t *testing.T) {
+	id := probeID()
+	d := dropFor(id)
+	d.Local = netip.MustParseAddrPort("10.1.0.5:61000")
+	if MatchDrop(d, id, t0, map[uint64]bool{7: true}) {
+		t.Error("другой адрес-источник — проба другого интерфейса")
+	}
+}

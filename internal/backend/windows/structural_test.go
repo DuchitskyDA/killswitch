@@ -73,3 +73,22 @@ func TestTieSoftPermitIsFine(t *testing.T) {
 		t.Errorf("soft permit наш hard block не пробивает: %+v", got)
 	}
 }
+
+func TestMissingPersistentBlockIsRepairable(t *testing.T) {
+	var left []Filter
+	for _, f := range ownOn(t) {
+		if !(f.Persistent && f.Action == Block && f.Layer == AcceptV6) {
+			left = append(left, f)
+		}
+	}
+	got := MissingFindings(left)
+	if len(got) != 1 || got[0].Kind != "wfp-missing" || !got[0].Repair {
+		t.Errorf("нет persistent block на слое — находка wfp-missing с Repair: %+v", got)
+	}
+}
+
+func TestFullSetHasNoMissing(t *testing.T) {
+	if got := MissingFindings(ownOn(t)); len(got) != 0 {
+		t.Errorf("полный набор без находок: %+v", got)
+	}
+}

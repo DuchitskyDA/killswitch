@@ -160,3 +160,15 @@ func TestKeyDiffersForBootTimeTwin(t *testing.T) {
 		t.Error("persistent и boot-time фильтр с одними условиями должны иметь разные ключи")
 	}
 }
+
+func TestPlanDuplicateEndpointsGiveOneFilter(t *testing.T) {
+	p := basePolicy(policy.ModeOn)
+	p.TrustMode = policy.TrustStrict
+	p.Trust[0].Destinations = policy.DestEndpoints
+	ep := policy.Endpoint{Host: "198.51.100.7", Port: 443, Proto: policy.ProtoTCP}
+	p.Tunnel.Endpoints = []policy.Endpoint{ep, ep}
+	r := plan(t, p, baseEnv())
+	if got := strings.Count(r.Render(), "remote-addr==198.51.100.7/32"); got != 1 {
+		t.Errorf("одинаковые endpoint дали %d фильтров (Status прочитает один)", got)
+	}
+}
