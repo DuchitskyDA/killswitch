@@ -108,6 +108,29 @@ func dumpDrops(t *testing.T, since time.Time) {
 	}
 }
 
+// dumpSublayers — диагностика: порядок перечисления sublayer и hard permit чужих на CONNECT_V4.
+func dumpSublayers(t *testing.T) {
+	t.Helper()
+	s, err := wf.New(&wf.Options{Name: "ks-smoke-diag", Dynamic: true})
+	if err != nil {
+		t.Logf("diag: %v", err)
+		return
+	}
+	defer s.Close()
+	subs, err := s.Sublayers()
+	t.Logf("diag: sublayers err=%v", err)
+	for i, sl := range subs {
+		t.Logf("diag: #%d %s %q weight=0x%X provider=%s", i, sl.ID, sl.Name, sl.Weight, sl.Provider)
+	}
+	rs, err := s.RulesOf(wf.RuleFilter{Layer: wf.LayerALEAuthConnectV4, IncludeDisabled: true})
+	t.Logf("diag: фильтров CONNECT_V4=%d err=%v", len(rs), err)
+	for _, r := range rs {
+		if r.Action == wf.ActionPermit && r.HardAction {
+			t.Logf("diag: hard permit %q sublayer=%s weight=%d conds=%d", r.Name, r.Sublayer, r.Weight, len(r.Conditions))
+		}
+	}
+}
+
 // foreignPermit — чужой sublayer 0xFFFF с hard permit всего на CONNECT_V4 в dynamic-сессии (исчезает с сессией).
 func foreignPermit(t *testing.T) *wf.Session {
 	t.Helper()
@@ -134,6 +157,8 @@ func tieKinds(t *testing.T, b *Backend) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("status: active=%v rules=%d details=%s", st.Active, st.Rules, st.Details)
+	dumpSublayers(t)
 	var kinds []string
 	for _, f := range st.Structural {
 		kinds = append(kinds, f.Kind)
