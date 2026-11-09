@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -24,6 +25,11 @@ func main() {
 		os.Exit(2)
 	}
 	cmd, args := os.Args[1], os.Args[2:]
+	// wf@6fbb0a67: bump-аллокатор arena не выравнивает адреса, и запись
+	// fwpmFilter0 с указателями при работающем GC падает (fatal error:
+	// bulkBarrierPreWrite: unaligned arguments, run 42619450025). Процессы
+	// короткие — GC выключен; боевому backend нужен форк с выравниванием.
+	debug.SetGCPercent(-1)
 	switch cmd {
 	case "probe":
 		os.Exit(runProbe(args))

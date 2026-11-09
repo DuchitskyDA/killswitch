@@ -106,41 +106,51 @@ func t1(c *ctx) {
 	expect("T1.after-close.denied-http-v4", true, b.d4, c.probe(c.denied, "http", cfV4))
 }
 
-// t1Tie — ничья весов 0xFFFF: чужой sublayer без provider создан ДО нашего,
-// с GUID ниже и выше нашего, hard permit для denied; наш block soft и hard.
+// t1Tie — ничья весов 0xFFFF: чужой sublayer без provider с hard permit для
+// denied, создан до или после нашего, с GUID ниже и выше нашего; наш block soft и hard.
 func t1Tie(c *ctx, b baseline) {
 	id, err := wf.AppID(c.denied)
 	if err != nil {
 		result("T1.tie", "FAIL", "AppID: %v", err)
 		return
 	}
-	for _, fg := range []string{"00000001-0000-0000-0000-000000000000", "fffffffe-ffff-ffff-ffff-ffffffffffff"} {
-		for _, hard := range []bool{false, true} {
-			tag := fmt.Sprintf("T1.tie.foreign-%s.hard-block=%t", fg[:8], hard)
-			s := mustSession(true, "ks-spike-tie")
-			slID := wf.SublayerID(mustGUID(fg))
-			if err := s.AddSublayer(&wf.Sublayer{ID: slID, Name: "ks-spike-foreign-tie", Weight: 0xFFFF}); err != nil {
-				result(tag, "FAIL", "AddSublayer: %v", err)
+	for _, order := range []string{"foreign-first", "ours-first"} {
+		for _, fg := range []string{"00000001-0000-0000-0000-000000000000", "fffffffe-ffff-ffff-ffff-ffffffffffff"} {
+			for _, hard := range []bool{false, true} {
+				tag := fmt.Sprintf("T1.tie.%s.foreign-%s.hard-block=%t", order, fg[:8], hard)
+				s := mustSession(true, "ks-spike-tie")
+				slID := wf.SublayerID(mustGUID(fg))
+				var rules []*wf.Rule
+				for _, l := range aleLayers {
+					name := fmt.Sprintf("ks-spike/tie-%s-%s/%s", order, fg[:8], layerNames[l])
+					rules = append(rules, &wf.Rule{ID: ruleKey(name), Name: name, Layer: l, Sublayer: slID, Weight: 100,
+						Action: wf.ActionPermit, HardAction: true,
+						Conditions: []*wf.Match{{Field: wf.FieldALEAppID, Op: wf.MatchTypeEqual, Value: id}}})
+				}
+				foreign := func() bool {
+					if err := s.AddSublayer(&wf.Sublayer{ID: slID, Name: "ks-spike-foreign-tie", Weight: 0xFFFF}); err != nil {
+						result(tag, "FAIL", "AddSublayer: %v", err)
+						return false
+					}
+					return c.mustApply(s, tag+".foreign", rules)
+				}
+				ours := func() bool {
+					return addBase(s, false) == nil &&
+						c.mustApply(s, tag+".ours", Plan{Tag: "tie", Block: true, HardBlock: hard, Loopback: true, Apps: c.appPermits(c.allowed)}.Rules())
+				}
+				ok := false
+				if order == "foreign-first" {
+					ok = foreign() && ours()
+				} else {
+					ok = ours() && foreign()
+				}
+				if ok {
+					got := c.probe(c.denied, "http", cfV4)
+					result(tag+".denied", "INFO", "denied (чужой hard permit 0xFFFF): %s", got)
+					expect(tag+".allowed", true, b.a4, c.probe(c.allowed, "http", cfV4))
+				}
 				s.Close()
-				continue
 			}
-			var rules []*wf.Rule
-			for _, l := range aleLayers {
-				name := fmt.Sprintf("ks-spike/tie-%s/%s", fg[:8], layerNames[l])
-				rules = append(rules, &wf.Rule{ID: ruleKey(name), Name: name, Layer: l, Sublayer: slID, Weight: 100,
-					Action: wf.ActionPermit, HardAction: true,
-					Conditions: []*wf.Match{{Field: wf.FieldALEAppID, Op: wf.MatchTypeEqual, Value: id}}})
-			}
-			if !c.mustApply(s, tag+".foreign", rules) {
-				s.Close()
-				continue
-			}
-			if err := addBase(s, false); err == nil &&
-				c.mustApply(s, tag+".ours", Plan{Tag: "tie", Block: true, HardBlock: hard, Loopback: true, Apps: c.appPermits(c.allowed)}.Rules()) {
-				expect(tag+".denied", false, b.d4, c.probe(c.denied, "http", cfV4))
-				expect(tag+".allowed", true, b.a4, c.probe(c.allowed, "http", cfV4))
-			}
-			s.Close()
 		}
 	}
 }
