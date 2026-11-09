@@ -72,7 +72,7 @@ func canaryCounters(packets string) string {
 	return `pass out quick on lo0 proto udp from any to 127.0.0.1 port = 9 no state label "killswitch-canary"
   [ Evaluations: 12        Packets: ` + packets + `         Bytes: 87          States: 0     ]
   [ Inserted: uid 0 pid 812 State Creations: 0     ]
-block return out quick proto tcp from any port = 61000 to any label "killswitch-probe-tcp-61000"
+block return out quick proto tcp from any port = 30000 to any label "killswitch-probe-tcp-30000"
   [ Evaluations: 40        Packets: ` + packets + `         Bytes: 0           States: 0     ]
 block return out quick all
   [ Evaluations: 40        Packets: 9         Bytes: 0           States: 0     ]

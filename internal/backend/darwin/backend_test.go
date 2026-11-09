@@ -251,7 +251,7 @@ func TestRemoveReleasesOnlyOurTokensAndFiles(t *testing.T) {
 }
 
 func probeID() probe.ProbeID {
-	return probe.ProbeID{Proto: "tcp", Src: netip.MustParseAddrPort("192.168.1.20:61000"), Dst: netip.MustParseAddrPort("1.1.1.1:80")}
+	return probe.ProbeID{Proto: "tcp", Src: netip.MustParseAddrPort("192.168.1.20:30000"), Dst: netip.MustParseAddrPort("1.1.1.1:80")}
 }
 
 func TestEvidenceWhenProbeRuleCounted(t *testing.T) {

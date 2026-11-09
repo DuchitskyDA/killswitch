@@ -35,7 +35,7 @@ func TestMainFilterSkipsScrub(t *testing.T) {
 
 func TestLabelPacketsByRule(t *testing.T) {
 	got := labelPackets(canaryCounters("7"))
-	if got[canaryLabel] != 7 || got[probeLabel("tcp", 61000)] != 7 || len(got) != 2 {
+	if got[canaryLabel] != 7 || got[probeLabel("tcp", 30000)] != 7 || len(got) != 2 {
 		t.Errorf("счётчики по label: %v", got)
 	}
 }

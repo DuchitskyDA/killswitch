@@ -282,12 +282,12 @@ func probeID(port uint16) probe.ProbeID {
 func TestEvidenceCountsProbePort(t *testing.T) {
 	b, f := newTestBackend(t)
 	b.Apply(plan(t, policy.ModeOn))
-	f.counters[61005] = 3
-	id := probeID(61005)
+	f.counters[30005] = 3
+	id := probeID(30005)
 	if err := b.BeforeProbe(id); err != nil {
 		t.Fatal(err)
 	}
-	f.counters[61005] = 4
+	f.counters[30005] = 4
 	dropped, err := b.Evidence(id, id.At)
 	if err != nil || !dropped {
 		t.Fatalf("Evidence = %v, %v; ждали отброс", dropped, err)
@@ -297,8 +297,8 @@ func TestEvidenceCountsProbePort(t *testing.T) {
 func TestEvidenceNoDropWhenCounterSame(t *testing.T) {
 	b, f := newTestBackend(t)
 	b.Apply(plan(t, policy.ModeOn))
-	f.counters[61006] = 2
-	id := probeID(61006)
+	f.counters[30006] = 2
+	id := probeID(30006)
 	b.BeforeProbe(id)
 	dropped, err := b.Evidence(id, id.At)
 	if err != nil || dropped {
@@ -312,8 +312,8 @@ func TestEvidenceWithoutDenyChainIsNoDrop(t *testing.T) {
 	if err := b.Apply(plan(t, policy.ModeOff)); err != nil {
 		t.Fatal(err)
 	}
-	f.counters[61008] = 5
-	id := probeID(61008)
+	f.counters[30008] = 5
+	id := probeID(30008)
 	if err := b.BeforeProbe(id); err != nil {
 		t.Fatalf("BeforeProbe в off: %v", err)
 	}
@@ -327,10 +327,10 @@ func TestEvidenceWithoutDenyChainIsNoDrop(t *testing.T) {
 func TestEvidenceCounterResetIsNoDrop(t *testing.T) {
 	b, f := newTestBackend(t)
 	b.Apply(plan(t, policy.ModeOn))
-	f.counters[61009] = 3
-	id := probeID(61009)
+	f.counters[30009] = 3
+	id := probeID(30009)
 	b.BeforeProbe(id)
-	f.counters[61009] = 0
+	f.counters[30009] = 0
 	if dropped, err := b.Evidence(id, id.At); err != nil || dropped {
 		t.Fatalf("Evidence после сброса = %v, %v; ждали «не отброшено»", dropped, err)
 	}
@@ -346,8 +346,8 @@ func TestEnforceUnitDoesNotPullEarlyUnit(t *testing.T) {
 func TestEvidenceNeedsBeforeProbe(t *testing.T) {
 	b, f := newTestBackend(t)
 	b.Apply(plan(t, policy.ModeOn))
-	f.counters[61007] = 1
-	if _, err := b.Evidence(probeID(61007), probeID(61007).At); err == nil {
+	f.counters[30007] = 1
+	if _, err := b.Evidence(probeID(30007), probeID(30007).At); err == nil {
 		t.Fatal("свидетельство без снимка счётчика")
 	}
 }
@@ -375,12 +375,12 @@ func TestApplyOffLateFailureRestoresOn(t *testing.T) {
 	}
 }
 
-// Границы диапазона проб включены: 61000 и 61063 — пробы, соседние порты — нет.
+// Границы диапазона проб включены: 30000 и 30063 — пробы, соседние порты — нет.
 func TestProbePortBounds(t *testing.T) {
 	b, f := newTestBackend(t)
 	b.Apply(plan(t, policy.ModeOn))
-	f.counters[61000], f.counters[61063] = 1, 1
-	for port, ok := range map[uint16]bool{60999: false, 61000: true, 61063: true, 61064: false} {
+	f.counters[30000], f.counters[30063] = 1, 1
+	for port, ok := range map[uint16]bool{60999: false, 30000: true, 30063: true, 30064: false} {
 		if err := b.BeforeProbe(probeID(port)); (err == nil) != ok {
 			t.Errorf("порт %d: BeforeProbe err=%v", port, err)
 		}

@@ -175,8 +175,8 @@ func linesWith(text, sub string) []string {
 func TestRenderDNSProbeCountedBeforeDNSBlock(t *testing.T) {
 	got := render(t, basePolicy(), baseEnv())
 	block := strings.Index(got, "block return out quick proto { tcp udp } from any to any port 53")
-	probe := strings.Index(got, `from any port 61000 to any port 53 label "killswitch-probe-udp-61000"`)
+	probe := strings.Index(got, `from any port 30000 to any port 53 label "killswitch-probe-udp-30000"`)
 	if probe < 0 || block < 0 || probe > block {
-		t.Errorf("правило пробы udp 61000 → 53 должно стоять до DNS-блока: проба %d, блок %d", probe, block)
+		t.Errorf("правило пробы udp 30000 → 53 должно стоять до DNS-блока: проба %d, блок %d", probe, block)
 	}
 }
