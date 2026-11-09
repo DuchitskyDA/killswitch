@@ -1,6 +1,9 @@
 package main
 
-import "github.com/DuchitskyDA/killswitch/internal/backend"
+import (
+	"github.com/DuchitskyDA/killswitch/internal/backend"
+	"github.com/DuchitskyDA/killswitch/internal/backend/darwin"
+)
 
-// newBackend подключает backend ОС. Файл принадлежит backend-тикету этой ОС.
-func newBackend() (backend.Backend, error) { return nil, backend.ErrNotImplemented }
+// newBackend подключает pf-backend macOS. Файл принадлежит тикету ks-darwin.
+func newBackend() (backend.Backend, error) { return darwin.New(), nil }

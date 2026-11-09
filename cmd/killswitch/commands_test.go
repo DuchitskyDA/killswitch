@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DuchitskyDA/killswitch/internal/backend"
 	"github.com/DuchitskyDA/killswitch/internal/env"
 	"github.com/DuchitskyDA/killswitch/internal/policy"
 	"github.com/DuchitskyDA/killswitch/internal/probe"
@@ -46,7 +47,7 @@ func TestRepairProgramsNotFoundIsConfigError(t *testing.T) {
 
 func TestBackendNotImplementedIsApplyError(t *testing.T) {
 	d := newHarness(t, baseConfig).deps()
-	d.backend = newBackend
+	d.backend = func() (backend.Backend, error) { return nil, backend.ErrNotImplemented }
 	eq(t, run(context.Background(), []string{"status"}, d), exitApply)
 }
 
@@ -96,7 +97,7 @@ func TestCheckWithoutTargetsIsInconclusive(t *testing.T) {
 func TestDetectFindsProfileByPath(t *testing.T) {
 	h := newHarness(t, baseConfig)
 	eq(t, h.run("detect"), exitOK)
-	eq(t, h.out.String(), "example: "+wireguardExe+"\n")
+	eq(t, h.out.String(), "example: "+wireguardExe+"\nwireguard: "+wireguardExe+"\n")
 }
 
 func TestStatusSnapshotFailureIsApplyError(t *testing.T) {

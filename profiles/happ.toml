@@ -1,0 +1,24 @@
+# Happ (FlyFrog LLC): ядра xray и sing-box, служба happd.
+name = "happ"
+description = "Happ: адаптеры happ-*, ядра xray и sing-box"
+
+# Живые проверки; пусто — профиль не проверен.
+verified_on = []
+
+[windows]
+interfaces = ["happ-xray", "happ-tun", "happ-default-tun"]
+programs = [
+  'C:\Program Files\FlyFrogLLC\Happ\*.exe',
+  'C:\Program Files\FlyFrogLLC\Happ\*\*.exe',
+]
+detect = ['C:\Program Files\FlyFrogLLC\Happ\Happ.exe']
+
+[linux]
+interfaces = ["happ-xray", "happ-tun", "happ-wg"]
+users = ["root"]
+detect = ["/opt/happ/bin/Happ"]
+
+[darwin]
+# Имя utun назначает ядро macOS; совпадут и системные utun.
+interfaces = ["utun*"]
+users = ["root"]

@@ -1,0 +1,14 @@
+# killswitch: наблюдатель. Ставит "killswitch on", снимает "killswitch uninstall".
+[Unit]
+Description=killswitch: наблюдатель (enforce)
+After=killswitch-early.service
+
+[Service]
+Type=simple
+ExecStart=/var/lib/killswitch/bin/killswitch enforce
+Restart=always
+RestartSec=5
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

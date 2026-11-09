@@ -1,0 +1,112 @@
+# killswitch linux: режим off
+table inet killswitch
+delete table inet killswitch
+table inet killswitch {
+}
+# при загрузке (on.nft):
+table inet killswitch
+delete table inet killswitch
+table inet killswitch {
+	chain postrouting {
+		type filter hook postrouting priority filter - 10; policy drop;
+		oifname "lo" accept
+		meta iiftype != loopback fib saddr type != local accept comment "transit"
+		oifname "wg0" accept
+		udp sport 68 udp dport 67 accept
+		udp sport 546 udp dport 547 accept
+		icmpv6 type { nd-router-solicit, nd-neighbor-solicit, nd-neighbor-advert, packet-too-big, mld-listener-report, mld2-listener-report } accept
+		meta l4proto { tcp, udp } th sport 30000-30063 goto rest comment "check probes"
+		goto rest
+	}
+
+	chain rest {
+		ip daddr 10.0.0.0/8 meta l4proto { tcp, udp } th dport 53 accept
+		ip daddr 172.16.0.0/12 meta l4proto { tcp, udp } th dport 53 accept
+		ip daddr 192.168.0.0/16 meta l4proto { tcp, udp } th dport 53 accept
+		ip daddr 169.254.0.0/16 meta l4proto { tcp, udp } th dport 53 accept
+		ip6 daddr fc00::/7 meta l4proto { tcp, udp } th dport 53 accept
+		ip6 daddr fe80::/10 meta l4proto { tcp, udp } th dport 53 accept
+		ip daddr 192.168.1.1 meta l4proto { tcp, udp } th dport 53 accept
+		ip daddr 203.0.113.53 meta l4proto { tcp, udp } th dport 53 accept
+		meta l4proto { tcp, udp } th dport 53 goto deny
+		ip daddr 10.0.0.0/8 accept
+		ip daddr 172.16.0.0/12 accept
+		ip daddr 192.168.0.0/16 accept
+		ip daddr 169.254.0.0/16 accept
+		ip6 daddr fc00::/7 accept
+		ip6 daddr fe80::/10 accept
+		ip daddr 224.0.0.251 accept
+		ip daddr 224.0.0.252 accept
+		ip6 daddr ff02::fb accept
+		ip6 daddr ff02::1:3 accept
+		goto deny
+	}
+
+	chain deny {
+		meta l4proto { tcp, udp } th sport 30000 counter drop comment "probe 30000"
+		meta l4proto { tcp, udp } th sport 30001 counter drop comment "probe 30001"
+		meta l4proto { tcp, udp } th sport 30002 counter drop comment "probe 30002"
+		meta l4proto { tcp, udp } th sport 30003 counter drop comment "probe 30003"
+		meta l4proto { tcp, udp } th sport 30004 counter drop comment "probe 30004"
+		meta l4proto { tcp, udp } th sport 30005 counter drop comment "probe 30005"
+		meta l4proto { tcp, udp } th sport 30006 counter drop comment "probe 30006"
+		meta l4proto { tcp, udp } th sport 30007 counter drop comment "probe 30007"
+		meta l4proto { tcp, udp } th sport 30008 counter drop comment "probe 30008"
+		meta l4proto { tcp, udp } th sport 30009 counter drop comment "probe 30009"
+		meta l4proto { tcp, udp } th sport 30010 counter drop comment "probe 30010"
+		meta l4proto { tcp, udp } th sport 30011 counter drop comment "probe 30011"
+		meta l4proto { tcp, udp } th sport 30012 counter drop comment "probe 30012"
+		meta l4proto { tcp, udp } th sport 30013 counter drop comment "probe 30013"
+		meta l4proto { tcp, udp } th sport 30014 counter drop comment "probe 30014"
+		meta l4proto { tcp, udp } th sport 30015 counter drop comment "probe 30015"
+		meta l4proto { tcp, udp } th sport 30016 counter drop comment "probe 30016"
+		meta l4proto { tcp, udp } th sport 30017 counter drop comment "probe 30017"
+		meta l4proto { tcp, udp } th sport 30018 counter drop comment "probe 30018"
+		meta l4proto { tcp, udp } th sport 30019 counter drop comment "probe 30019"
+		meta l4proto { tcp, udp } th sport 30020 counter drop comment "probe 30020"
+		meta l4proto { tcp, udp } th sport 30021 counter drop comment "probe 30021"
+		meta l4proto { tcp, udp } th sport 30022 counter drop comment "probe 30022"
+		meta l4proto { tcp, udp } th sport 30023 counter drop comment "probe 30023"
+		meta l4proto { tcp, udp } th sport 30024 counter drop comment "probe 30024"
+		meta l4proto { tcp, udp } th sport 30025 counter drop comment "probe 30025"
+		meta l4proto { tcp, udp } th sport 30026 counter drop comment "probe 30026"
+		meta l4proto { tcp, udp } th sport 30027 counter drop comment "probe 30027"
+		meta l4proto { tcp, udp } th sport 30028 counter drop comment "probe 30028"
+		meta l4proto { tcp, udp } th sport 30029 counter drop comment "probe 30029"
+		meta l4proto { tcp, udp } th sport 30030 counter drop comment "probe 30030"
+		meta l4proto { tcp, udp } th sport 30031 counter drop comment "probe 30031"
+		meta l4proto { tcp, udp } th sport 30032 counter drop comment "probe 30032"
+		meta l4proto { tcp, udp } th sport 30033 counter drop comment "probe 30033"
+		meta l4proto { tcp, udp } th sport 30034 counter drop comment "probe 30034"
+		meta l4proto { tcp, udp } th sport 30035 counter drop comment "probe 30035"
+		meta l4proto { tcp, udp } th sport 30036 counter drop comment "probe 30036"
+		meta l4proto { tcp, udp } th sport 30037 counter drop comment "probe 30037"
+		meta l4proto { tcp, udp } th sport 30038 counter drop comment "probe 30038"
+		meta l4proto { tcp, udp } th sport 30039 counter drop comment "probe 30039"
+		meta l4proto { tcp, udp } th sport 30040 counter drop comment "probe 30040"
+		meta l4proto { tcp, udp } th sport 30041 counter drop comment "probe 30041"
+		meta l4proto { tcp, udp } th sport 30042 counter drop comment "probe 30042"
+		meta l4proto { tcp, udp } th sport 30043 counter drop comment "probe 30043"
+		meta l4proto { tcp, udp } th sport 30044 counter drop comment "probe 30044"
+		meta l4proto { tcp, udp } th sport 30045 counter drop comment "probe 30045"
+		meta l4proto { tcp, udp } th sport 30046 counter drop comment "probe 30046"
+		meta l4proto { tcp, udp } th sport 30047 counter drop comment "probe 30047"
+		meta l4proto { tcp, udp } th sport 30048 counter drop comment "probe 30048"
+		meta l4proto { tcp, udp } th sport 30049 counter drop comment "probe 30049"
+		meta l4proto { tcp, udp } th sport 30050 counter drop comment "probe 30050"
+		meta l4proto { tcp, udp } th sport 30051 counter drop comment "probe 30051"
+		meta l4proto { tcp, udp } th sport 30052 counter drop comment "probe 30052"
+		meta l4proto { tcp, udp } th sport 30053 counter drop comment "probe 30053"
+		meta l4proto { tcp, udp } th sport 30054 counter drop comment "probe 30054"
+		meta l4proto { tcp, udp } th sport 30055 counter drop comment "probe 30055"
+		meta l4proto { tcp, udp } th sport 30056 counter drop comment "probe 30056"
+		meta l4proto { tcp, udp } th sport 30057 counter drop comment "probe 30057"
+		meta l4proto { tcp, udp } th sport 30058 counter drop comment "probe 30058"
+		meta l4proto { tcp, udp } th sport 30059 counter drop comment "probe 30059"
+		meta l4proto { tcp, udp } th sport 30060 counter drop comment "probe 30060"
+		meta l4proto { tcp, udp } th sport 30061 counter drop comment "probe 30061"
+		meta l4proto { tcp, udp } th sport 30062 counter drop comment "probe 30062"
+		meta l4proto { tcp, udp } th sport 30063 counter drop comment "probe 30063"
+		counter drop comment "final"
+	}
+}
