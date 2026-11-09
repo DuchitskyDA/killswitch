@@ -90,18 +90,35 @@ result 4.utun NOT_TESTED "utun на раннере не поднимался; т
 log "check"
 expect 5.check-no-targets 5 "$BIN" check
 
-log "check с целями: root доверен, пробы выше Trust → BLOCKED со свидетельством"
-arp -d 198.19.0.2 >/dev/null 2>&1
-ifconfig feth3 inet 198.19.0.2 netmask 255.255.255.255 alias
-/usr/bin/python3 "$KS/targets.py" 198.19.0.2 300 > "$OUT/targets.log" 2>&1 &
-tg=$!; sleep 2; cat "$OUT/targets.log"
-route -n get 198.19.0.2 2>&1 | grep -E 'interface|flags'
-printf '$ curl --interface feth2 (baseline через туннель)\n'; /usr/bin/curl -sS -m 3 -o /dev/null -w '%{http_code}\n' --interface feth2 http://198.19.0.2/ 2>&1
+log "check с целями: туннель sing-box (utun99), root доверен → BLOCKED со свидетельством"
+# Цель 203.0.113.10 (TEST-NET-3) напрямую уходит через en0 и упирается в правило пробы; через туннель sing-box
+# переадресует её на локальные сервисы 127.0.0.2 — так baseline через туннель живой без внешнего сервера.
+ifconfig lo0 alias 127.0.0.2
+/usr/bin/python3 "$KS/targets.py" 127.0.0.2 300 > "$OUT/targets.log" 2>&1 &
+tg=$!
+cat > "$KS/sing-box.json" <<EOF
+{
+  "log": { "level": "warn", "timestamp": true },
+  "inbounds": [{ "type": "tun", "tag": "tun-in", "interface_name": "utun99", "address": ["172.19.0.1/30"],
+    "auto_route": true, "route_address": ["203.0.113.10/32"], "stack": "gvisor" }],
+  "outbounds": [{ "type": "direct", "tag": "direct" }],
+  "route": { "rules": [{ "ip_cidr": ["203.0.113.10/32"], "action": "route-options", "override_address": "127.0.0.2" }],
+    "final": "direct" }
+}
+EOF
+"$KS/sing-box" run -c "$KS/sing-box.json" > "$OUT/sing-box.log" 2>&1 &
+sb=$!
+s=$(wait_for 20 ifconfig utun99); echo "utun99 через $s с"; cat "$OUT/targets.log"
+route -n get 203.0.113.10 2>&1 | grep -E 'interface|flags'
+printf '$ curl --interface utun99 (baseline через туннель)\n'; /usr/bin/curl -sS -m 3 -o /dev/null -w '%{http_code}\n' --interface utun99 http://203.0.113.10/ 2>&1
 cp "$DIR/config.toml" "$KS/config.toml.base"
-printf '\n[check]\ntargets = ["198.19.0.2"]\n' >> "$DIR/config.toml"
+sed 's/interfaces = \["feth2"\]/interfaces = ["utun99"]/' "$KS/config.toml.base" > "$DIR/config.toml"
+printf '\n[check]\ntargets = ["203.0.113.10"]\n' >> "$DIR/config.toml"
+s=$(wait_for 40 sh -c "pfctl -a '$ANCHOR' -sr | grep -q 'on utun99'"); echo "правило on utun99 через $s с"
 expect 5.check-targets 0 "$BIN" check
 cp "$KS/config.toml.base" "$DIR/config.toml"
-kill "$tg" 2>/dev/null
+kill "$sb" "$tg" 2>/dev/null
+cat "$OUT/sing-box.log" | tail -5
 
 log "Чужое quick-правило выше якоря: только LEAK, основной набор не перезаписывается"
 printf 'pass out quick proto tcp to any port 443\nanchor "com.apple/*"\n' | pfctl -q -f - 2>&1

@@ -53,6 +53,8 @@ reset_all() {
   pfctl -q -f /etc/pf.conf >/dev/null 2>&1
   if [ "$(cat "$KS/pf_initial" 2>/dev/null)" = Disabled ] && [ "$(pf_status)" = Enabled ]; then pfctl -d >/dev/null 2>&1; fi
   for i in 0 1 2 3; do ifconfig "feth$i" destroy >/dev/null 2>&1; done
+  pkill -f "$KS/sing-box" >/dev/null 2>&1; pkill -f "$KS/targets.py" >/dev/null 2>&1
+  ifconfig lo0 -alias 127.0.0.2 >/dev/null 2>&1
   echo "reset($1) $(date +%T) pf=$(pf_status) anchor_rules=$(anchor_rules)"
 }
 
