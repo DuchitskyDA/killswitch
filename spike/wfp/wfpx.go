@@ -345,6 +345,7 @@ func orphanFilters(s *wf.Session) ([]FilterInfo, error) {
 type fwpmFilterCondition0 struct {
 	FieldKey  windows.GUID
 	MatchType uint32
+	_         uint32 // FWP_CONDITION_VALUE0 выровнен на 8
 	ValueType uint32
 	_         uint32
 	Value     unsafe.Pointer
