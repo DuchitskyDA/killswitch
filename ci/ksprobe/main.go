@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"syscall"
 
 	"github.com/DuchitskyDA/killswitch/internal/env"
 	"github.com/DuchitskyDA/killswitch/internal/health"
@@ -71,10 +72,36 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	p := probe.NetProber{Bind: bind, Timeout: health.Timeout}
-	if err := p.Tunnel(context.Background(), r.service, r.dst, iface); err != nil {
-		fmt.Printf("нет ответа: %s %s %s: %v\n", r.service.Name, r.dst, r.iface, err)
-		os.Exit(1)
+	var bindErr error
+	ctrl := bind(iface)
+	record := func(network, address string, c syscall.RawConn) error {
+		if ctrl == nil {
+			return nil
+		}
+		bindErr = ctrl(network, address, c)
+		return bindErr
 	}
-	fmt.Printf("ответ: %s %s %s\n", r.service.Name, r.dst, r.iface)
+	p := probe.NetProber{Bind: func(env.Iface) health.ControlFunc { return record }, Timeout: health.Timeout}
+	err = p.Tunnel(context.Background(), r.service, r.dst, iface)
+	code := exitCode(err, bindErr)
+	switch code {
+	case 2:
+		fmt.Fprintln(os.Stderr, "привязка к интерфейсу:", bindErr)
+	case 1:
+		fmt.Printf("нет ответа: %s %s %s: %v\n", r.service.Name, r.dst, r.iface, err)
+	default:
+		fmt.Printf("ответ: %s %s %s\n", r.service.Name, r.dst, r.iface)
+	}
+	os.Exit(code)
+}
+
+// exitCode: ошибка привязки — 2 (проба не ушла, по ней «закрыто» не судят), нет ответа — 1, ответ — 0.
+func exitCode(probeErr, bindErr error) int {
+	switch {
+	case bindErr != nil:
+		return 2
+	case probeErr != nil:
+		return 1
+	}
+	return 0
 }

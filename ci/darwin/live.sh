@@ -80,17 +80,18 @@ expect S3.on-open 0 "$BIN" on
 log "S4: переподключение с новым интерфейсом"
 start_tunnel utun97
 s=$(wait_for 40 http_ok http://1.1.1.1/); [ "$s" != FAIL ]; check S4.first $? "выход через utun97: $s с"
-stop_tunnel
-start_tunnel utun98
-t=0; leaks=0; back=FAIL
-while [ "$t" -le 60 ]; do
+# Окно переподключения: прямые пробы идут с остановки старого клиента до выхода через новый интерфейс.
+leaks=0; tries=0; back=FAIL; t0=$(date +%s)
+stop_tunnel nowait
+start_tunnel utun98 nowait
+while [ $(($(date +%s) - t0)) -le 60 ]; do
+  tries=$((tries + 1))
   http_ok http://1.0.0.1/ && leaks=$((leaks + 1))
   probe_blocked http 1.1.1.1 "$NIC" >/dev/null 2>&1 || leaks=$((leaks + 1))
-  if http_ok http://1.1.1.1/; then back=$t; break; fi
-  sleep 1; t=$((t + 1))
+  if http_ok http://1.1.1.1/; then back=$(($(date +%s) - t0)); break; fi
 done
-[ "$back" != FAIL ]; check S4.reconnect $? "выход через новый utun98 вернулся через ~$back с"
-[ "$leaks" -eq 0 ]; check S4.no-leak-window $? "прямых проб в окне: утечек $leaks"
+[ "$back" != FAIL ] && [ "$back" -le 60 ]; check S4.reconnect $? "выход через новый utun98 вернулся через $back с после остановки старого клиента"
+[ "$leaks" -eq 0 ]; check S4.no-leak-window $? "прямых проб в окне: $tries циклов, утечек $leaks"
 stop_tunnel
 
 log "S5: repair — unsupported на macOS"

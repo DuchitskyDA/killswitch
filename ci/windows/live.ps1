@@ -73,17 +73,18 @@ Write-Host '== S4: переподключение с новым адаптеро
 Start-Tunnel 'ks-tun2' | Out-Null
 $s = Wait-For 60 { Curl-Ok 'probe-denied' 'http://1.1.1.1/' }
 Check 'S4.first' ($s -ge 0) "выход через ks-tun2: через $s с"
-Stop-Tunnel
-$leaks = 0; $tries = 0
-$adapterUp = Start-Tunnel 'ks-tun3'
-$end = (Get-Date).AddSeconds(60); $back = -1; $t = Get-Date
+# Окно переподключения: прямые пробы идут с остановки старого клиента до выхода через новый адаптер.
+$leaks = 0; $tries = 0; $back = -1; $t = Get-Date; $end = $t.AddSeconds(60)
+Stop-Tunnel -NoWait
+Start-Tunnel 'ks-tun3' -NoWait | Out-Null
 while ((Get-Date) -lt $end) {
     $tries++
     if (Curl-Ok 'probe-denied' 'http://1.0.0.1/') { $leaks++ }
     if (-not (Probe-Blocked 'probe-denied' 'http' '1.1.1.1' $nic)) { $leaks++ }
     if (Curl-Ok 'probe-denied' 'http://1.1.1.1/') { $back = [int]((Get-Date) - $t).TotalSeconds; break }
 }
-Check 'S4.reconnect' ($back -ge 0) "выход через новый адаптер ks-tun3 вернулся через $back с после старта (адаптер за $adapterUp с)"
+if ($back -gt 60) { $back = -1 }
+Check 'S4.reconnect' ($back -ge 0) "выход через новый адаптер ks-tun3 вернулся через $back с после остановки старого клиента"
 Check 'S4.no-leak-window' ($leaks -eq 0) "прямых проб в окне: $tries циклов, утечек $leaks"
 Stop-Tunnel
 

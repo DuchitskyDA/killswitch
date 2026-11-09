@@ -39,14 +39,17 @@ probe_ok() { sudo -u "$PROBE_USER" "$KS/ksprobe" "$@"; }
 # Закрыто: ksprobe не получил ответа (код 1); ошибка привязки или аргументов (2) — не «закрыто».
 probe_blocked() { probe_ok "$@"; [ $? -eq 1 ]; }
 
-# Ждать до $1 с, пока команда не станет успешной; печатает секунды или FAIL.
+# Ждать до $1 с реального времени (с учётом длительности команды), пока она не станет успешной; секунды или FAIL.
 wait_for() {
-  limit=$1; shift; s=0
-  while [ "$s" -le "$limit" ]; do
-    if "$@" >/dev/null 2>&1; then echo "$s"; return 0; fi
-    sleep 1; s=$((s + 1))
+  limit=$1; shift; t0=$(date +%s)
+  while :; do
+    if "$@" >/dev/null 2>&1; then
+      s=$(($(date +%s) - t0)); [ "$s" -le "$limit" ] && { echo "$s"; return 0; }
+      echo FAIL; return 1
+    fi
+    [ $(($(date +%s) - t0)) -ge "$limit" ] && { echo FAIL; return 1; }
+    sleep 1
   done
-  echo FAIL; return 1
 }
 not() { ! "$@"; }
 
@@ -107,11 +110,13 @@ start_tunnel() {
 EOF
   "$KS/sing-box" run -c "$KS/sb-$1.json" > "$OUT/sing-box-$1.log" 2>&1 &
   echo $! > "$KS/sb.pid"
+  [ "$2" = nowait ] && return 0
   s=$(wait_for 20 ifconfig "$1"); echo "туннель $1 поднят через $s с"
 }
-stop_tunnel() {
+stop_tunnel() { # $1 = nowait — не ждать ухода интерфейса
   [ -f "$KS/sb.pid" ] && kill "$(cat "$KS/sb.pid")" 2>/dev/null
-  rm -f "$KS/sb.pid"; sleep 2
+  rm -f "$KS/sb.pid"
+  [ "$1" = nowait ] || sleep 2
 }
 
 # Демон наблюдателя: bootout асинхронный — ждать выгрузки и выхода enforce; bootstrap сразу после bootout может

@@ -37,13 +37,14 @@ function Expect-Probe($id, $wantOk, $dir, $url) {
     $ok = Curl-Ok $dir $url
     Check $id ($ok -eq $wantOk) "curl $dir $url ok=$ok want-ok=$wantOk"
 }
-# Ждать до $limit с, пока блок не вернёт $true; секунды или -1.
+# Ждать до $limit с реального времени (с учётом длительности проверки), пока блок не вернёт $true; секунды или -1.
 function Wait-For($limit, [scriptblock]$cond) {
-    for ($s = 0; $s -le $limit; $s += 2) {
-        if (& $cond) { return $s }
-        Start-Sleep 2
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        if (& $cond) { $s = [int]$sw.Elapsed.TotalSeconds; if ($s -le $limit) { return $s } else { return -1 } }
+        if ($sw.Elapsed.TotalSeconds -ge $limit) { return -1 }
+        Start-Sleep 1
     }
-    return -1
 }
 # Boot-time-политика в netsh — без имён: считаем наши фильтры по ключам из KS_BOOTKEYS.
 function Count-BootKeys($tag) {
@@ -85,7 +86,7 @@ function Write-Config([bool]$Lan = $true, [string]$Dns = 'open') {
 
 # Туннель стенда — sing-box TUN без strict_route: 1.1.1.1 — настоящий выход через туннель (sing-box доверен),
 # 203.0.113.10 → цели check и dns.health на 127.0.0.2 (HTTP — на 18080: порт 80 на loopback держит система), резолвер DHCP — чтобы системный DNS шёл через TUN.
-function Start-Tunnel($name) {
+function Start-Tunnel($name, [switch]$NoWait) {
     $cfg = [ordered]@{
         log       = @{ level = 'warn'; timestamp = $true }
         dns       = @{ servers = @(@{ type = 'udp'; tag = 'dns-udp'; server = $env:KS_RESOLVER; server_port = 53 }) }
@@ -101,12 +102,14 @@ function Start-Tunnel($name) {
     $cfg | ConvertTo-Json -Depth 8 | Set-Content $file
     $script:Sb = Start-Process "$env:KS\sb\sing-box.exe" -ArgumentList 'run', '-c', $file -PassThru -NoNewWindow `
         -RedirectStandardOutput "$env:KS\sb-$name.out.log" -RedirectStandardError "$env:KS\sb-$name.log"
+    if ($NoWait) { return 0 }
     $s = Wait-For 30 { (Get-NetAdapter -Name $name -ErrorAction SilentlyContinue).Status -eq 'Up' }
     Write-Host "туннель $name поднят через $s с"
     return $s
 }
-function Stop-Tunnel {
+function Stop-Tunnel([switch]$NoWait) {
     if ($script:Sb) { Stop-Process $script:Sb -Force -ErrorAction SilentlyContinue; $script:Sb = $null }
+    if ($NoWait) { return }
     Start-Sleep 2
     Get-NetAdapter -Name 'ks-tun*' -ErrorAction SilentlyContinue | Format-Table Name, Status, ifIndex -AutoSize | Out-String | Write-Host
 }
