@@ -80,18 +80,24 @@ expect S3.on-open 0 "$BIN" on
 log "S4: переподключение с новым интерфейсом"
 start_tunnel utun97
 s=$(wait_for 40 http_ok http://1.1.1.1/); [ "$s" != FAIL ]; check S4.first $? "выход через utun97: $s с"
-# Окно переподключения: прямые пробы идут с остановки старого клиента до выхода через новый интерфейс.
-leaks=0; tries=0; back=FAIL; t0=$(date +%s)
+# Окно переподключения: наблюдатель (фоновый процесс) шлёт прямые пробы ещё до остановки старого клиента и до
+# выхода через новый интерфейс; строка — «код curl к 1.0.0.1, код ksprobe к 1.1.1.1 по NIC» (закрыто: ≠0 и 1).
+rm -f "$KS/s4.watch" "$KS/s4.stop"
+( while [ ! -f "$KS/s4.stop" ]; do
+    http_ok http://1.0.0.1/; a=$?
+    probe_ok http 1.1.1.1 "$NIC" >/dev/null 2>&1; b=$?
+    echo "$a $b" >> "$KS/s4.watch"
+  done ) &
+wp=$!
+ready=$(wait_for 30 test -s "$KS/s4.watch"); echo "наблюдатель окна готов через $ready с"
 stop_tunnel nowait
 start_tunnel utun98 nowait
-while [ $(($(date +%s) - t0)) -le 60 ]; do
-  tries=$((tries + 1))
-  http_ok http://1.0.0.1/ && leaks=$((leaks + 1))
-  probe_blocked http 1.1.1.1 "$NIC" >/dev/null 2>&1 || leaks=$((leaks + 1))
-  if http_ok http://1.1.1.1/; then back=$(($(date +%s) - t0)); break; fi
-done
-[ "$back" != FAIL ] && [ "$back" -le 60 ]; check S4.reconnect $? "выход через новый utun98 вернулся через $back с после остановки старого клиента"
-[ "$leaks" -eq 0 ]; check S4.no-leak-window $? "прямых проб в окне: $tries циклов, утечек $leaks"
+back=$(wait_for 60 http_ok http://1.1.1.1/)
+sleep 2; touch "$KS/s4.stop"; wait "$wp"
+tries=$(grep -c . "$KS/s4.watch"); leaks=$(awk '$1 == 0 || $2 != 1' "$KS/s4.watch" | grep -c .)
+[ "$back" != FAIL ]; check S4.reconnect $? "выход через новый utun98 вернулся через $back с после остановки старого клиента"
+[ "$ready" != FAIL ] && [ "$tries" -gt 0 ] && [ "$leaks" -eq 0 ]
+check S4.no-leak-window $? "наблюдатель: $tries циклов с момента до остановки, утечек или невалидных проб $leaks"
 stop_tunnel
 
 log "S5: repair — unsupported на macOS"

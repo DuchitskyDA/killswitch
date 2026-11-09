@@ -73,14 +73,7 @@ func main() {
 		}
 	}
 	var bindErr error
-	ctrl := bind(iface)
-	record := func(network, address string, c syscall.RawConn) error {
-		if ctrl == nil {
-			return nil
-		}
-		bindErr = ctrl(network, address, c)
-		return bindErr
-	}
+	record := recordBind(bind(iface), &bindErr)
 	p := probe.NetProber{Bind: func(env.Iface) health.ControlFunc { return record }, Timeout: health.Timeout}
 	err = p.Tunnel(context.Background(), r.service, r.dst, iface)
 	code := exitCode(err, bindErr)
@@ -93,6 +86,17 @@ func main() {
 		fmt.Printf("ответ: %s %s %s\n", r.service.Name, r.dst, r.iface)
 	}
 	os.Exit(code)
+}
+
+// recordBind сохраняет ошибку привязки в out: по ней ksprobe отличает «проба не ушла» (2) от «нет ответа» (1).
+func recordBind(ctrl health.ControlFunc, out *error) health.ControlFunc {
+	return func(network, address string, c syscall.RawConn) error {
+		if ctrl == nil {
+			return nil
+		}
+		*out = ctrl(network, address, c)
+		return *out
+	}
 }
 
 // exitCode: ошибка привязки — 2 (проба не ушла, по ней «закрыто» не судят), нет ответа — 1, ответ — 0.

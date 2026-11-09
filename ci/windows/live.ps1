@@ -73,19 +73,30 @@ Write-Host '== S4: переподключение с новым адаптеро
 Start-Tunnel 'ks-tun2' | Out-Null
 $s = Wait-For 60 { Curl-Ok 'probe-denied' 'http://1.1.1.1/' }
 Check 'S4.first' ($s -ge 0) "выход через ks-tun2: через $s с"
-# Окно переподключения: прямые пробы идут с остановки старого клиента до выхода через новый адаптер.
-$leaks = 0; $tries = 0; $back = -1; $t = Get-Date; $end = $t.AddSeconds(60)
+# Окно переподключения: наблюдатель (отдельный процесс) шлёт прямые пробы ещё до остановки старого клиента
+# и до выхода через новый адаптер; строка — «код curl к 1.0.0.1, код ksprobe к 1.1.1.1 по NIC» (закрыто: ≠0 и 1).
+$watch = "$env:KS\s4.watch"; $stop = "$env:KS\s4.stop"
+Remove-Item $watch, $stop -ErrorAction SilentlyContinue
+$job = Start-Job -ArgumentList $env:KS, $nic, $watch, $stop -ScriptBlock {
+    param($ks, $nic, $watch, $stop)
+    while (-not (Test-Path $stop)) {
+        & "$ks\probe-denied\curl.exe" -s -o NUL -m 3 'http://1.0.0.1/' 2>$null | Out-Null; $a = $LASTEXITCODE
+        & "$ks\probe-denied\ksprobe.exe" http 1.1.1.1 $nic 2>$null | Out-Null; $b = $LASTEXITCODE
+        Add-Content $watch "$a $b"
+    }
+}
+$ready = Wait-For 30 { Test-Path $watch }
+Write-Host "наблюдатель окна готов через $ready с"
 Stop-Tunnel -NoWait
 Start-Tunnel 'ks-tun3' -NoWait | Out-Null
-while ((Get-Date) -lt $end) {
-    $tries++
-    if (Curl-Ok 'probe-denied' 'http://1.0.0.1/') { $leaks++ }
-    if (-not (Probe-Blocked 'probe-denied' 'http' '1.1.1.1' $nic)) { $leaks++ }
-    if (Curl-Ok 'probe-denied' 'http://1.1.1.1/') { $back = [int]((Get-Date) - $t).TotalSeconds; break }
-}
-if ($back -gt 60) { $back = -1 }
+$back = Wait-For 60 { Curl-Ok 'probe-denied' 'http://1.1.1.1/' }
+Start-Sleep 2
+New-Item $stop -ItemType File | Out-Null
+Wait-Job $job -Timeout 30 | Out-Null; Remove-Job $job -Force
+$rows = @(Get-Content $watch)
+$leaks = @($rows | Where-Object { $p = $_ -split ' '; $p[0] -eq '0' -or $p[1] -ne '1' }).Count
 Check 'S4.reconnect' ($back -ge 0) "выход через новый адаптер ks-tun3 вернулся через $back с после остановки старого клиента"
-Check 'S4.no-leak-window' ($leaks -eq 0) "прямых проб в окне: $tries циклов, утечек $leaks"
+Check 'S4.no-leak-window' ($ready -ge 0 -and $rows.Count -gt 0 -and $leaks -eq 0) "наблюдатель: $($rows.Count) циклов с момента до остановки, утечек или невалидных проб $leaks"
 Stop-Tunnel
 
 Write-Host '== S6, S5: off и repair'
@@ -119,7 +130,7 @@ Expect-Code 'S9.check-stripped' 4 { & $KsExe check }
 Expect-Code 'S9.status-stripped' 4 { & $KsExe status }
 Expect-Probe 'S9.leak-real' $true 'probe-denied' 'http://1.1.1.1/'
 Start-Service killswitch
-$s = Wait-For 70 { -not (Curl-Ok 'probe-denied' 'http://1.1.1.1/') }
+$s = Wait-For 60 { -not (Curl-Ok 'probe-denied' 'http://1.1.1.1/') }
 Check 'S10.restored' ($s -ge 0) "служба восстановила защиту через $s с"
 Expect-Code 'S10.status-restored' 0 { & $KsExe status }
 

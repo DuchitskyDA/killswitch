@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"syscall"
 	"testing"
 )
 
@@ -40,5 +41,19 @@ func TestExitCodeBindErrorIsNotBlocked(t *testing.T) {
 func TestExitCodeNoAnswerIsBlocked(t *testing.T) {
 	if got := exitCode(errors.New("i/o timeout"), nil); got != 1 {
 		t.Errorf("нет ответа без ошибки привязки — код 1: %d", got)
+	}
+}
+
+func TestRecordBindKeepsControlError(t *testing.T) {
+	var got error
+	ctrl := recordBind(func(string, string, syscall.RawConn) error { return errors.New("setsockopt") }, &got)
+	if err := ctrl("udp4", "1.1.1.1:53", nil); err == nil || got == nil {
+		t.Errorf("ошибка привязки должна вернуться и сохраниться: %v / %v", err, got)
+	}
+}
+
+func TestExitCodeAnswerIsZero(t *testing.T) {
+	if got := exitCode(nil, nil); got != 0 {
+		t.Errorf("ответ сервера — код 0: %d", got)
 	}
 }
