@@ -1,0 +1,91 @@
+package windows
+
+import (
+	"fmt"
+
+	"github.com/DuchitskyDA/killswitch/internal/probe"
+)
+
+// MaxWeight — вес нашего sublayer.
+const MaxWeight uint16 = 0xFFFF
+
+// SublayerInfo — sublayer в порядке перечисления WFP.
+type SublayerInfo struct {
+	ID, Name string
+	Weight   uint16
+}
+
+// ForeignFilter — чужой фильтр на наших слоях.
+type ForeignFilter struct {
+	Sublayer, Name string
+	Layer          Layer
+	Permit, Hard   bool
+	Conds          []Cond
+}
+
+// TieFindings — ничья 0xFFFF (решение владельца «б»): чужой sublayer с весом ≥ нашего, перечисленный раньше нашего,
+// с hard permit, который пускает не только наше. Подслой клиента (sing-box со случайным GUID) узнаётся по условиям
+// его permit: все значения одного поля — наши app-id, LUID туннеля или loopback (рев. 6).
+func TieFindings(sublayers []SublayerInfo, ours string, foreign []ForeignFilter, own []Filter) []probe.StructuralFinding {
+	before := map[string]SublayerInfo{}
+	for _, s := range sublayers {
+		if s.ID == ours {
+			break
+		}
+		if s.Weight >= MaxWeight {
+			before[s.ID] = s
+		}
+	}
+	allowed := allowedValues(own)
+	var out []probe.StructuralFinding
+	for _, f := range foreign {
+		s, ok := before[f.Sublayer]
+		if !ok || !f.Permit || !f.Hard || restrictedTo(f.Conds, allowed) {
+			continue
+		}
+		out = append(out, probe.StructuralFinding{Kind: "wfp-tie", Detail: fmt.Sprintf(
+			"чужой sublayer %s %q (вес 0x%X, раньше нашего) — hard permit %q на %s пробивает наш block", s.ID, s.Name, s.Weight, f.Name, f.Layer)})
+	}
+	return out
+}
+
+// allowedValues — app-id и LUID из наших permit-фильтров.
+func allowedValues(own []Filter) map[string]bool {
+	out := map[string]bool{}
+	for _, f := range own {
+		if f.Action != Permit {
+			continue
+		}
+		for _, c := range f.Conds {
+			if c.Field == FieldAppID || c.Field == FieldLocalIface {
+				out[c.String()] = true
+			}
+		}
+	}
+	return out
+}
+
+// restrictedTo: есть поле, все условия которого (ИЛИ внутри поля) — только разрешённое нам; поля между собой — И.
+func restrictedTo(conds []Cond, allowed map[string]bool) bool {
+	byField := map[Field][]Cond{}
+	for _, c := range conds {
+		if c.Raw == "" {
+			byField[c.Field] = append(byField[c.Field], c)
+		}
+	}
+	for field, cs := range byField {
+		if field == FieldLoopback || allWithin(cs, allowed) {
+			return true
+		}
+	}
+	return false
+}
+
+func allWithin(cs []Cond, allowed map[string]bool) bool {
+	for _, c := range cs {
+		if (c.Op != "" && c.Op != OpEq) || !allowed[c.String()] {
+			return false
+		}
+	}
+	return true
+}

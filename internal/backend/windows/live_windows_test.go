@@ -1,0 +1,174 @@
+//go:build windows && wfplive
+
+// Живые тесты WFP: только на одноразовом раннере GitHub Actions (workflow smoke-windows), никогда на рабочей машине.
+// Сборка: go test -tags wfplive -c; запуск — отдельными шагами workflow с -test.run.
+package windows
+
+import (
+	"net"
+	"net/netip"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/DuchitskyDA/killswitch/internal/policy"
+	"github.com/DuchitskyDA/killswitch/internal/probe"
+	"github.com/DuchitskyDA/killswitch/internal/third_party/wf"
+	xwin "golang.org/x/sys/windows"
+)
+
+// onRunner — защита машины: без признаков одноразового раннера тест падает до любого вызова WFP.
+func onRunner(t *testing.T) {
+	t.Helper()
+	if os.Getenv("GITHUB_ACTIONS") != "true" || os.Getenv("RUNNER_ENVIRONMENT") != "github-hosted" {
+		t.Fatal("живые тесты WFP — только на раннере GitHub (GITHUB_ACTIONS=true, RUNNER_ENVIRONMENT=github-hosted)")
+	}
+}
+
+// configPolicy — политика из конфига дыма (KS_CONFIG), как её строит CLI без профиля.
+func configPolicy(t *testing.T) policy.Policy {
+	t.Helper()
+	data, err := os.ReadFile(os.Getenv("KS_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := policy.ParseConfig(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := policy.Build(policy.Layer{}, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p.WithMode(policy.ModeOn)
+}
+
+func applyConfig(t *testing.T, b *Backend) {
+	t.Helper()
+	p := configPolicy(t)
+	e, err := b.Snapshot(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := b.Plan(p, e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Apply(r); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestLiveEvidence: при on проба этого (недоверенного) процесса отброшена, и есть событие отброса нашим фильтром.
+func TestLiveEvidence(t *testing.T) {
+	onRunner(t)
+	b := New()
+	id := probe.ProbeID{Proto: "tcp", Src: netip.MustParseAddrPort("0.0.0.0:61010"),
+		Dst: netip.MustParseAddrPort("1.1.1.1:80"), At: time.Now()}
+	if err := b.BeforeProbe(id); err != nil {
+		t.Fatal(err)
+	}
+	d := net.Dialer{Timeout: 3 * time.Second, LocalAddr: net.TCPAddrFromAddrPort(id.Src)}
+	conn, dialErr := d.Dial("tcp4", id.Dst.String())
+	if dialErr == nil {
+		conn.Close()
+		t.Fatal("проба вышла мимо защиты")
+	}
+	dropped, err := b.Evidence(id, id.At)
+	if err != nil || !dropped {
+		t.Fatalf("нет свидетельства отброса нашим фильтром: dropped=%v err=%v (dial: %v)", dropped, err, dialErr)
+	}
+	t.Logf("проба отброшена: %v", dialErr)
+}
+
+// foreignPermit — чужой sublayer 0xFFFF с hard permit всего на CONNECT_V4 в dynamic-сессии (исчезает с сессией).
+func foreignPermit(t *testing.T) *wf.Session {
+	t.Helper()
+	s, err := wf.New(&wf.Options{Name: "ks-smoke-foreign", Dynamic: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub := wf.SublayerID(xwin.GUID{Data1: 0x5a5a0001, Data2: 0x1, Data3: 0x4000, Data4: [8]byte{0x80, 1, 2, 3, 4, 5, 6, 7}})
+	if err := s.AddSublayer(&wf.Sublayer{ID: sub, Name: "ks-smoke-foreign", Weight: 0xFFFF}); err != nil {
+		t.Fatal(err)
+	}
+	rule := &wf.Rule{ID: wf.RuleID(xwin.GUID{Data1: 0x5a5a0002, Data2: 0x1, Data3: 0x4000, Data4: [8]byte{0x80, 1, 2, 3, 4, 5, 6, 8}}),
+		Name: "ks-smoke-foreign permit all", Layer: wf.LayerALEAuthConnectV4, Sublayer: sub, Weight: 15,
+		Action: wf.ActionPermit, HardAction: true}
+	if err := s.AddRule(rule); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func tieKinds(t *testing.T, b *Backend) []string {
+	t.Helper()
+	st, err := b.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	for _, f := range st.Structural {
+		kinds = append(kinds, f.Kind)
+		t.Logf("находка %s: %s", f.Kind, f.Detail)
+	}
+	return kinds
+}
+
+// TestLiveTie: чужой sublayer 0xFFFF после нашего — не утечка; наш создан после чужого — LEAK (wfp-tie).
+// В конце наш набор переустановлен по конфигу уже без чужого.
+func TestLiveTie(t *testing.T) {
+	onRunner(t)
+	b := New()
+	foreign := foreignPermit(t)
+	after := tieKinds(t, b)
+	if err := b.Remove(); err != nil {
+		t.Fatal(err)
+	}
+	applyConfig(t, b) // наш sublayer теперь создан после чужого
+	before := tieKinds(t, b)
+	foreign.Close()
+	gone := tieKinds(t, b)
+	if len(after) != 0 || len(before) != 1 || before[0] != "wfp-tie" || len(gone) != 0 {
+		t.Errorf("ожидалось: после нашего — нет, раньше нашего — wfp-tie, без чужого — нет; получено %v / %v / %v", after, before, gone)
+	}
+}
+
+// TestLiveGone: после uninstall нет ни provider, ни sublayer, ни одного нашего фильтра на всех слоях (с boot-time).
+func TestLiveGone(t *testing.T) {
+	onRunner(t)
+	s, err := wf.New(&wf.Options{Name: "ks-smoke-check", Dynamic: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	provs, err := s.Providers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	subs, err := s.Sublayers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	layers, err := s.Layers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, left := providerID, 0
+	for _, l := range layers {
+		rs, _ := s.RulesOf(wf.RuleFilter{Provider: &pid, Layer: l.ID, IncludeBootTime: true, IncludeDisabled: true})
+		left += len(rs)
+	}
+	if hasProvider(provs) || hasSublayer(subs) || left != 0 {
+		t.Errorf("после uninstall остались: provider=%v sublayer=%v фильтров=%d", hasProvider(provs), hasSublayer(subs), left)
+	}
+}
+
+func hasSublayer(subs []*wf.Sublayer) bool {
+	for _, s := range subs {
+		if s.ID == sublayerID {
+			return true
+		}
+	}
+	return false
+}
