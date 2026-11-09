@@ -331,8 +331,9 @@ func foreignWFP(before map[wf.ProviderID]bool) {
 	}
 	// sublayers без provider с весом рядом с нашим
 	for _, sl := range subs {
-		if sl.Weight >= 0xFF00 {
-			fmt.Printf("HIGH SUBLAYER weight=0x%04X %q provider=%s\n", sl.Weight, sl.Name, sl.Provider)
+		if sl.Weight >= 0xFF00 && sl.ID != sublayerID {
+			fmt.Printf("HIGH SUBLAYER weight=0x%04X %q id=%s provider=%s\n", sl.Weight, sl.Name, sl.ID, sl.Provider)
+			dumpSublayer(s, windows.GUID(sl.ID))
 		}
 	}
 }
@@ -650,16 +651,28 @@ func t5tx(c *ctx) {
 	// c) persistent-объект из dynamic-сессии.
 	s2 := mustSession(true, "ks-spike-t5dyn")
 	err = s2.AddProvider(&wf.Provider{ID: providerID, Name: providerName, Persistent: true})
+	errSub := s2.AddSublayer(&wf.Sublayer{ID: sublayerID, Name: sublayerName, Provider: providerID, Weight: 0xFFFF, Persistent: true})
+	pf := &wf.Rule{ID: ruleKey("ks-spike/dynpersist"), Name: "ks-spike/dynpersist", Layer: wf.LayerALEAuthConnectV4,
+		Sublayer: sublayerID, Provider: providerID, Weight: 1, Action: wf.ActionPermit, Persistent: true,
+		Conditions: []*wf.Match{{Field: wf.FieldIPRemotePort, Op: wf.MatchTypeEqual, Value: uint16(9)}}}
+	errFilter := s2.AddRule(pf)
 	s2.Close()
-	persisted := false
+	persisted, subPersisted, filterPersisted := false, false, false
 	if s4, err := openSession(false, "ks-spike-t5chk"); err == nil {
 		provs, _ := s4.Providers()
 		for _, p := range provs {
 			persisted = persisted || p.ID == providerID
 		}
+		subs, _ := s4.Sublayers()
+		for _, sl := range subs {
+			subPersisted = subPersisted || sl.ID == sublayerID
+		}
+		filterPersisted, _ = filterExists(s4, wf.LayerALEAuthConnectV4, windows.GUID(pf.ID))
 		s4.Close()
 	}
-	result("T5.dynamic-session-persistent-provider", "INFO", "AddProvider(Persistent) в dynamic-сессии: %v; provider после закрытия сессии: %t", err, persisted)
+	result("T5.dynamic-session-persistent-objects", "INFO",
+		"в dynamic-сессии с Persistent: provider %v → после закрытия %t; sublayer %v → %t; filter %v → %t",
+		err, persisted, errSub, subPersisted, errFilter, filterPersisted)
 	if s3, err := openSession(false, "ks-spike-t5clean"); err == nil {
 		removeOurs(s3)
 		s3.Close()
