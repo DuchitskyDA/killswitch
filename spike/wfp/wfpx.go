@@ -94,7 +94,7 @@ type fwpmFilter0 struct {
 	SubLayerKey        windows.GUID
 	Weight             fwpValue0
 	NumConditions      uint32
-	Conditions         uintptr
+	Conditions         unsafe.Pointer
 	Action             fwpmAction0
 	ProviderContextKey [2]uint64
 	Reserved           *windows.GUID
@@ -339,4 +339,69 @@ func orphanFilters(s *wf.Session) ([]FilterInfo, error) {
 		}
 	}
 	return out, errors.Join(errs...)
+}
+
+// fwpmFilterCondition0 — раскладка FWPM_FILTER_CONDITION0 на amd64.
+type fwpmFilterCondition0 struct {
+	FieldKey  windows.GUID
+	MatchType uint32
+	ValueType uint32
+	_         uint32
+	Value     unsafe.Pointer
+}
+
+func condValue(t uint32, v unsafe.Pointer) string {
+	switch t {
+	case 1, 2, 3:
+		return fmt.Sprintf("%d", uintptr(v))
+	case 4:
+		if v == nil {
+			return "nil"
+		}
+		return fmt.Sprintf("0x%x", *(*uint64)(v))
+	case 12: // FWP_BYTE_BLOB_TYPE (app-id — UTF-16)
+		if v == nil {
+			return "nil"
+		}
+		bb := (*struct {
+			Size uint32
+			Data *uint16
+		})(v)
+		return windows.UTF16PtrToString(bb.Data)
+	}
+	return fmt.Sprintf("type%d", t)
+}
+
+// dumpSublayer печатает фильтры чужого sublayer на наших слоях с условиями.
+func dumpSublayer(s *wf.Session, sub windows.GUID) {
+	h := uintptr(engineHandle(s))
+	for _, l := range aleLayers {
+		tmpl := fwpmFilterEnumTemplate0{LayerKey: windows.GUID(l), EnumType: enumTypeOverlapping, Flags: enumFlagIncludeDisabled, ActionMask: 0xFFFFFFFF}
+		var enum windows.Handle
+		if r, _, _ := procFilterCreateEnum.Call(h, uintptr(unsafe.Pointer(&tmpl)), uintptr(unsafe.Pointer(&enum))); r != 0 {
+			continue
+		}
+		for {
+			var arr **fwpmFilter0
+			var n uint32
+			if r, _, _ := procFilterEnum.Call(h, uintptr(enum), 100, uintptr(unsafe.Pointer(&arr)), uintptr(unsafe.Pointer(&n))); r != 0 || n == 0 {
+				break
+			}
+			for _, f := range unsafe.Slice(arr, n) {
+				if f.SubLayerKey != sub {
+					continue
+				}
+				var conds []string
+				if f.NumConditions > 0 {
+					for _, c := range unsafe.Slice((*fwpmFilterCondition0)(f.Conditions), f.NumConditions) {
+						conds = append(conds, fmt.Sprintf("%s op%d %s", wf.FieldID(c.FieldKey), c.MatchType, condValue(c.ValueType, c.Value)))
+					}
+				}
+				fmt.Printf("  FILTER %s action=0x%x flags=0x%x weight=%s eff=%s %q [%s]\n", layerNames[l], f.Action.Type, f.Flags,
+					valueString(f.Weight), valueString(f.EffectiveWeight), windows.UTF16PtrToString(f.Name), strings.Join(conds, " && "))
+			}
+			procFreeMemory.Call(uintptr(unsafe.Pointer(&arr)))
+		}
+		procFilterDestroyEnum.Call(h, uintptr(enum))
+	}
 }

@@ -43,11 +43,17 @@ function Count-InXml($file, $pattern) {
     return ([regex]::Matches((Get-Content $file -Raw), [regex]::Escape($pattern))).Count
 }
 
+# Boot-time-политика в netsh без имён: считаем по ключам наших фильтров (KS_BOOTKEYS).
 function Snapshot-Netsh($tag) {
     netsh wfp show boottimepolicy file="C:\ks\boottime-$tag.xml" | Out-Null
     netsh wfp show filters file="C:\ks\filters-$tag.xml" | Out-Null
-    $b = Count-InXml "C:\ks\boottime-$tag.xml" 'ks-spike/'
+    $xml = Get-Content "C:\ks\boottime-$tag.xml" -Raw
+    $items = [regex]::Match($xml, 'numItems="(\d+)"').Groups[1].Value
+    $b = 0
+    if (Test-Path $env:KS_BOOTKEYS) {
+        foreach ($k in Get-Content $env:KS_BOOTKEYS) { if ($k -and $xml.ToLower().Contains($k)) { $b++ } }
+    }
     $f = Count-InXml "C:\ks\filters-$tag.xml" 'ks-spike/'
-    Write-Host "netsh $tag : boottimepolicy ks-spike=$b, filters ks-spike=$f"
-    return [pscustomobject]@{ Boot = $b; Filters = $f }
+    Write-Host "netsh $tag : boottimepolicy items=$items ours=$b, filters ks-spike=$f"
+    return [pscustomobject]@{ Boot = $b; Items = $items; Filters = $f }
 }

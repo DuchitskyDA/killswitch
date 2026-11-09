@@ -399,8 +399,16 @@ func cmdState() int {
 	marker, _ := markerExists(s)
 	fmt.Printf("STATE filters=%d persistent=%d boottime=%d other=%d noprovider-by-key=%d provider=%t sublayer=%t marker=%t\n",
 		len(fs), persist, boot, other, byKey, hasProv, hasSub, marker)
+	var bootKeys []string
 	for _, f := range fs {
 		fmt.Printf("  %s flags=0x%x weight=%s eff=%s action=0x%x\n", f.Name, f.Flags, f.Weight, f.EffectiveWeight, f.Action)
+		if f.Flags&filterFlagBootTime != 0 {
+			bootKeys = append(bootKeys, strings.ToLower(strings.Trim(windows.GUID(f.Key).String(), "{}")))
+		}
+	}
+	// Ключи boot-time — для сверки с netsh wfp show boottimepolicy (там нет имён).
+	if p := os.Getenv("KS_BOOTKEYS"); p != "" && len(bootKeys) > 0 {
+		_ = os.WriteFile(p, []byte(strings.Join(bootKeys, "\n")+"\n"), 0o644)
 	}
 	return 0
 }

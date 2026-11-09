@@ -19,6 +19,7 @@ env:
   SINGBOX_VERSION: '1.14.4'
   SINGBOX_SHA256: '99185d75d314a07dbba4a130c8ad986cbeb629a07927975636b341ca61f991df'
   KS_RESULTS: 'C:\ks\results.txt'
+  KS_BOOTKEYS: 'C:\ks\bootkeys.txt'
 
 jobs:
   spike:
@@ -80,6 +81,8 @@ jobs:
           Get-NetFirewallProfile | Format-Table Name, Enabled, DefaultInboundAction, DefaultOutboundAction -AutoSize | Out-String
           Get-Service BFE, mpssvc | Format-Table Name, Status, StartType -AutoSize | Out-String
           (Get-Service BFE).DependentServices | Format-Table Name, Status -AutoSize | Out-String
+          sc.exe qc BFE; sc.exe queryex BFE; sc.exe sdshow BFE
+          $n = Snapshot-Netsh 'baseline'
           C:\ks\bin\wfpspike.exe inventory
 
       - name: T1 layers, loopback, app-id, LUID, soft/hard
@@ -131,12 +134,12 @@ jobs:
           "--- state из нового процесса"
           C:\ks\bin\wfpspike.exe state
           $n = Snapshot-Netsh 'setup'
-          Result 'T5.netsh.boottimepolicy' 'INFO' "ks-spike в boottimepolicy: $($n.Boot); в filters: $($n.Filters)"
+          Result 'T5.netsh.boottimepolicy' $(if ($n.Boot -gt 0) { 'PASS' } else { 'FAIL' }) "наших boot-time в boottimepolicy: $($n.Boot) (всего $($n.Items)); persistent в filters: $($n.Filters)"
           C:\ks\bin\wfpspike.exe remove
           "--- state после remove"
           C:\ks\bin\wfpspike.exe state
           $n = Snapshot-Netsh 'removed'
-          Result 'T5.netsh.after-remove' $(if ($n.Boot -eq 0 -and $n.Filters -eq 0) { 'PASS' } else { 'FAIL' }) "boottimepolicy: $($n.Boot); filters: $($n.Filters)"
+          Result 'T5.netsh.after-remove' $(if ($n.Boot -eq 0 -and $n.Filters -eq 0) { 'PASS' } else { 'FAIL' }) "наших в boottimepolicy: $($n.Boot) (всего $($n.Items)); в filters: $($n.Filters)"
           Expect 'T5.after-remove.denied-http' $true (Probe $Denied http '1.1.1.1:80')
           Disarm-Watchdog
 
@@ -152,20 +155,42 @@ jobs:
           C:\ks\bin\wfpspike.exe state
           $deps = (Get-Service BFE).DependentServices | Where-Object Status -eq 'Running'
           Result 'T5.bfe.running-dependents' 'INFO' (($deps.Name) -join ',')
-          $t0 = Get-Date
           try {
             Stop-Service BFE -Force -ErrorAction Stop
-            Result 'T5.bfe.stop' 'INFO' "BFE: $((Get-Service BFE).Status) за $([int]((Get-Date)-$t0).TotalMilliseconds) мс"
+            Result 'T5.bfe.stop.admin' 'INFO' "BFE: $((Get-Service BFE).Status)"
           } catch {
-            Result 'T5.bfe.stop' 'INFO' "не остановилась: $($_.Exception.Message)"
+            Result 'T5.bfe.stop.admin' 'INFO' "администратор: $($_.Exception.Message)"
           }
-          $stopped = (Get-Service BFE).Status -eq 'Stopped'
-          if ($stopped) {
-            Result 'T5.bfe.stopped.denied' 'INFO' ((Probe $Denied http '1.1.1.1:80') | ConvertTo-Json -Compress)
-            Result 'T5.bfe.stopped.allowed' 'INFO' ((Probe $Allowed http '1.1.1.1:80') | ConvertTo-Json -Compress)
+          # Повтор от SYSTEM задачей планировщика: остановка, пробы, запуск.
+          $script = @'
+          $log = 'C:\ks\bfe-system.log'
+          function L($s) { Add-Content $log "$(Get-Date -Format HH:mm:ss.fff) $s" }
+          L "whoami: $(whoami)"
+          $deps = (Get-Service BFE).DependentServices | Where-Object Status -eq 'Running'
+          L ("sc stop: " + ((sc.exe stop BFE) -join ' '))
+          Start-Sleep 2
+          if ((Get-Service BFE).Status -ne 'Stopped') {
+            try { Stop-Service BFE -Force -ErrorAction Stop } catch { L "Stop-Service: $($_.Exception.Message)" }
+          }
+          L "BFE: $((Get-Service BFE).Status)"
+          if ((Get-Service BFE).Status -eq 'Stopped') {
+            L ("denied: " + ((& 'C:\ks\bin\probe-denied\wfpspike.exe' probe http 1.1.1.1:80) -join ' '))
+            L ("allowed: " + ((& 'C:\ks\bin\probe-allowed\wfpspike.exe' probe http 1.1.1.1:80) -join ' '))
           }
           Start-Service BFE
           foreach ($d in $deps) { Start-Service $d.Name -ErrorAction SilentlyContinue }
+          L "после: BFE $((Get-Service BFE).Status), mpssvc $((Get-Service mpssvc).Status)"
+          'done' | Set-Content C:\ks\bfe-done.txt
+          '@
+          Set-Content C:\ks\bfe-system.ps1 $script
+          Remove-Item C:\ks\bfe-done.txt -ErrorAction SilentlyContinue
+          $a = New-ScheduledTaskAction -Execute 'pwsh.exe' -Argument '-NoProfile -File C:\ks\bfe-system.ps1'
+          Register-ScheduledTask -TaskName ks-spike-bfe -Action $a -User 'NT AUTHORITY\SYSTEM' -RunLevel Highest -Force | Out-Null
+          Start-ScheduledTask -TaskName ks-spike-bfe
+          for ($i = 0; $i -lt 120 -and -not (Test-Path C:\ks\bfe-done.txt); $i++) { Start-Sleep 1 }
+          Get-Content C:\ks\bfe-system.log -ErrorAction SilentlyContinue
+          Result 'T5.bfe.system' 'INFO' ((Get-Content C:\ks\bfe-system.log -ErrorAction SilentlyContinue) -join ' / ')
+          Unregister-ScheduledTask -TaskName ks-spike-bfe -Confirm:$false -ErrorAction SilentlyContinue
           (Get-Service BFE, mpssvc) | Format-Table Name, Status -AutoSize | Out-String
           Start-Sleep 3
           "--- state после перезапуска BFE"
@@ -198,5 +223,6 @@ jobs:
             C:\ks\bin\*.log
             C:\ks\*.xml
             C:\ks\wdf-profiles.csv
+            C:\ks\bfe-system.log
           if-no-files-found: warn
           retention-days: 30

@@ -94,6 +94,7 @@ func t1(c *ctx) {
 		expect(tag+".loopback-v4", true, b.lo4, c.pair(c.denied, c.denied, loV4))
 		expect(tag+".loopback-v6", true, b.lo6, c.pair(c.denied, c.denied, loV6))
 
+		t1Arbitration(c, s, tag, b)
 		if !hard {
 			t1NoLoopback(c, s, plan, b)
 			t1Iface(c, s, b)
@@ -102,6 +103,40 @@ func t1(c *ctx) {
 		s.Close()
 	}
 	expect("T1.after-close.denied-http-v4", true, b.d4, c.probe(c.denied, "http", cfV4))
+}
+
+// t1Arbitration — чужой sublayer с hard permit (clear action right) для denied:
+// выше нас по весу (ничья 0xFFFF) и ниже (0x0100). Пробивает ли он наш block?
+func t1Arbitration(c *ctx, s *wf.Session, tag string, b baseline) {
+	id, err := wf.AppID(c.denied)
+	if err != nil {
+		result(tag+".arb", "FAIL", "AppID: %v", err)
+		return
+	}
+	for _, sl := range []struct {
+		name   string
+		weight uint16
+	}{{"foreign-ffff", 0xFFFF}, {"foreign-0100", 0x0100}} {
+		slID := wf.SublayerID(guidV5(ruleNamespace, "sublayer/"+sl.name))
+		if err := s.AddSublayer(&wf.Sublayer{ID: slID, Name: "ks-spike-" + sl.name, Provider: providerID, Weight: sl.weight}); err != nil {
+			result(tag+".arb."+sl.name, "FAIL", "AddSublayer: %v", err)
+			continue
+		}
+		var rules []*wf.Rule
+		for _, l := range aleLayers {
+			name := fmt.Sprintf("ks-spike/%s/arb-%s/%s", tag, sl.name, layerNames[l])
+			rules = append(rules, &wf.Rule{ID: ruleKey(name), Name: name, Layer: l, Sublayer: slID, Provider: providerID,
+				Weight: 100, Action: wf.ActionPermit, HardAction: true,
+				Conditions: []*wf.Match{{Field: wf.FieldALEAppID, Op: wf.MatchTypeEqual, Value: id}}})
+		}
+		if c.mustApply(s, tag+".arb."+sl.name+".apply", rules) {
+			got := c.probe(c.denied, "http", cfV4)
+			result(tag+".arb.hard-permit-"+sl.name, "INFO", "denied с чужим hard permit (sublayer 0x%04X): %s", sl.weight, got)
+		}
+		deleteRules(s, rules)
+		_ = s.DeleteSublayer(slID)
+	}
+	expect(tag+".arb.after.denied-http-v4", false, b.d4, c.probe(c.denied, "http", cfV4))
 }
 
 // t1NoLoopback — без permit loopback: доказательство, что работают V6 и RECV_ACCEPT.
@@ -615,8 +650,16 @@ func t5tx(c *ctx) {
 	// c) persistent-объект из dynamic-сессии.
 	s2 := mustSession(true, "ks-spike-t5dyn")
 	err = s2.AddProvider(&wf.Provider{ID: providerID, Name: providerName, Persistent: true})
-	result("T5.dynamic-session-persistent-provider", "INFO", "AddProvider(Persistent) в dynamic-сессии: %v", err)
 	s2.Close()
+	persisted := false
+	if s4, err := openSession(false, "ks-spike-t5chk"); err == nil {
+		provs, _ := s4.Providers()
+		for _, p := range provs {
+			persisted = persisted || p.ID == providerID
+		}
+		s4.Close()
+	}
+	result("T5.dynamic-session-persistent-provider", "INFO", "AddProvider(Persistent) в dynamic-сессии: %v; provider после закрытия сессии: %t", err, persisted)
 	if s3, err := openSession(false, "ks-spike-t5clean"); err == nil {
 		removeOurs(s3)
 		s3.Close()
