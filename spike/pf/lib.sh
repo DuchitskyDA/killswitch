@@ -108,7 +108,10 @@ feth_up() {
   w=0   # DAD: TCP по v6 с адреса tentative не уходит
   while ifconfig "feth$a" | grep "$v6::1 " | grep -q tentative && [ "$w" -lt 20 ]; do sleep 0.5; w=$((w + 1)); done
   sleep 1
+  # Пересозданный feth наследует устаревшую клонированную запись — без удаления ndp -s не встаёт (прогон 3, шаг 3b D).
+  ndp -d "$v6::2" >/dev/null 2>&1; route -n delete -inet6 "$v6::2" >/dev/null 2>&1
   ndp -s "$v6::2" 02:00:00:00:00:02 2>&1
+  ndp -an | grep "$v6::2 " | grep -q permanent || echo "feth$a: статическая NDP-запись не встала"
   return 0
 }
 feth_down() {
@@ -127,7 +130,7 @@ cap_probe() {
   if [ "$proto" = tcp ]; then
     err=$(sudo -u "#$uid" nc -z -G 2 -w 2 "$dst" "$port" 2>&1 | tr '\n' ' ')
   else
-    err=$(printf x | sudo -u "#$uid" nc -u -w 1 "$dst" "$port" 2>&1 | tr '\n' ' ')
+    for k in 1 2 3; do err=$(printf x | sudo -u "#$uid" nc -u -w 1 "$dst" "$port" 2>&1 | tr '\n' ' '); done
   fi
   sleep 1
   kill "$tp" 2>/dev/null; wait "$tp" 2>/dev/null
