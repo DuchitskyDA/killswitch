@@ -1,0 +1,74 @@
+name: smoke-darwin
+
+# Дымовой прогон pf-backend на одноразовых macOS-раннерах. Правила pf ставятся только здесь, на ВМ раннера.
+# Живая приёмка — волна 3 (ks-ci); этот файл ks-ci поглощает или удаляет.
+on:
+  push:
+    branches: [universal-darwin]
+    paths: ['internal/backend/darwin/**', 'cmd/killswitch/**', '.github/workflows/smoke-darwin.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-darwin
+  cancel-in-progress: true
+
+jobs:
+  pf:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.10'
+
+      - name: unit tests
+        timeout-minutes: 5
+        # cmd/killswitch не здесь: TestBackendNotImplementedIsApplyError ядра ждёт стаб newBackend (интеграция волны 2)
+        run: go test ./internal/backend/darwin/
+
+      - name: build
+        timeout-minutes: 5
+        run: |
+          sudo mkdir -p /private/tmp/ks-smoke/out
+          go build -o killswitch ./cmd/killswitch
+          go test -c -tags darwinlive -o live.test ./internal/backend/darwin
+          sudo cp killswitch live.test internal/backend/darwin/testdata/smoke/*.sh /private/tmp/ks-smoke/
+          id -u | sudo tee /private/tmp/ks-smoke/runner_uid
+          sudo chmod -R a+rX /private/tmp/ks-smoke
+
+      - name: smoke
+        timeout-minutes: 15
+        run: sudo sh /private/tmp/ks-smoke/smoke.sh
+
+      - name: reset
+        if: always()
+        timeout-minutes: 2
+        run: sudo sh -c '. /private/tmp/ks-smoke/lib.sh; reset_all final; disarm_watchdog; pfctl -s info | head -1; pfctl -s References'
+
+      - name: results
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.os }}"
+            echo '```'
+            sudo cat /private/tmp/ks-smoke/out/results.txt 2>/dev/null || echo 'нет результатов'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p out && sudo cp -R /private/tmp/ks-smoke/out/. out/ && sudo cp /var/log/killswitch.log out/ 2>/dev/null; sudo chown -R "$USER" out
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: smoke-darwin-${{ matrix.os }}
+          path: out/
