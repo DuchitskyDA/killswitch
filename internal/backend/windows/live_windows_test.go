@@ -76,9 +76,36 @@ func TestLiveEvidence(t *testing.T) {
 	}
 	dropped, err := b.Evidence(id, id.At)
 	if err != nil || !dropped {
+		dumpDrops(t, id.At)
 		t.Fatalf("нет свидетельства отброса нашим фильтром: dropped=%v err=%v (dial: %v)", dropped, err, dialErr)
 	}
 	t.Logf("проба отброшена: %v", dialErr)
+}
+
+// dumpDrops — диагностика: состояние сбора, наши block-id и все события отброса около пробы.
+func dumpDrops(t *testing.T, since time.Time) {
+	t.Helper()
+	s, err := wf.New(&wf.Options{Name: "ks-smoke-diag", Dynamic: true})
+	if err != nil {
+		t.Logf("diag: %v", err)
+		return
+	}
+	defer s.Close()
+	on, err := s.CollectNetEvents()
+	t.Logf("diag: сбор событий=%v err=%v", on, err)
+	ours, err := ourBlockIDs(s)
+	t.Logf("diag: наши block id=%v err=%v", ours, err)
+	all, err := s.DropEvents()
+	t.Logf("diag: всего событий без окна=%d err=%v", len(all), err)
+	evs, err := s.DropEventsSince(since.Add(-time.Minute), time.Now().Add(time.Minute))
+	t.Logf("diag: событий в окне ±1 мин=%d err=%v", len(evs), err)
+	for i, ev := range evs {
+		if i >= 30 {
+			break
+		}
+		t.Logf("diag: %s proto=%d %s -> %s filter=%d layer=%d app=%q", ev.Timestamp.Format(time.RFC3339Nano),
+			ev.IPProtocol, ev.LocalAddr, ev.RemoteAddr, ev.FilterID, ev.LayerID, ev.AppID)
+	}
 }
 
 // foreignPermit — чужой sublayer 0xFFFF с hard permit всего на CONNECT_V4 в dynamic-сессии (исчезает с сессией).
