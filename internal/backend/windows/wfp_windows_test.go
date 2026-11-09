@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/DuchitskyDA/killswitch/internal/policy"
+	"github.com/DuchitskyDA/killswitch/internal/third_party/wf"
 	xwin "golang.org/x/sys/windows"
 )
 
@@ -32,5 +33,13 @@ func TestSockaddrOfIPv6(t *testing.T) {
 	_, ok := sockaddrOf(netip.MustParseAddr("2001:db8::5")).(*xwin.SockaddrInet6)
 	if !ok {
 		t.Error("IPv6-адрес должен давать SockaddrInet6 (без паники As4)")
+	}
+}
+
+// Из WFP флаги приходят как uint32 (parse.go), а не wf.ConditionFlag.
+func TestFromMatchLoopbackAsReadFromWFP(t *testing.T) {
+	m := &wf.Match{Field: wf.FieldFlags, Op: wf.MatchTypeFlagsAllSet, Value: uint32(wf.ConditionFlagIsLoopback)}
+	if got := fromMatch(m); got.Field != FieldLoopback || got.Raw != "" {
+		t.Errorf("loopback из WFP прочитан как %+v", got)
 	}
 }

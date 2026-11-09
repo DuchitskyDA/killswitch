@@ -42,7 +42,14 @@ func (a *arena) grow() {
 // Alloc returns an unsafe.Pointer to a zeroed range of length bytes.
 func (a *arena) Alloc(length uintptr) unsafe.Pointer {
 	if length > slabSize {
-		panic(fmt.Sprintf("can't allocate something that big (%d bytes)", length))
+		// killswitch: большое выделение (массив условий на 100+ app-id) — отдельным блоком LocalAlloc
+		// (выровнен ОС), освобождается тем же Dispose; текущий слаб не трогается.
+		big, err := windows.LocalAlloc(windows.LPTR, uint32(length))
+		if err != nil {
+			panic(fmt.Sprintf("memory allocation failed: %v", err))
+		}
+		a.slabs = append(a.slabs, big)
+		return *(*unsafe.Pointer)(unsafe.Pointer(&big))
 	}
 	if length == 0 {
 		panic("can't allocate zero bytes")

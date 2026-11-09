@@ -14,3 +14,4 @@
   опция движка «сбор событий» (`CollectNetEvents/SetCollectNetEvents`), `DropEventsSince` с окном времени.
 - `zguids.go`: литералы `windows.GUID` с именами полей (go vet).
 - `types.go`: раскладка `FWPM_FILTER0` — объединение rawContext/providerContextKey одним полем 16 байт (было 24: `FilterID` читался со сдвигом).
+- `malloc.go`: выделение больше слаба (4096 байт) — отдельным блоком LocalAlloc вместо паники (массив условий на 100+ app-id).
