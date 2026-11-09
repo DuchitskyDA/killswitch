@@ -78,6 +78,11 @@ jobs:
         continue-on-error: true
         run: sudo env PY="$PY" sh /private/tmp/ks/t5-restart.sh
 
+      - name: 6 stateless extras
+        timeout-minutes: 5
+        continue-on-error: true
+        run: sudo env PY="$PY" sh /private/tmp/ks/t6-extra.sh
+
       - name: reset
         if: always()
         timeout-minutes: 2

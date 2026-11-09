@@ -15,6 +15,7 @@ Workflow — `.github/workflows/spike-pf.yml`, запускается push'ем 
 | `t3b-v6.sh` | IPv6 на `feth`: захват на нескольких интерфейсах, NDP |
 | `t4-states.sh` | живут ли потоки после ужесточения (keep state / no state), `pfctl -k` по хосту, свидетели |
 | `t5-restart.sh` | правила после `-d`/`-e` и `pfctl -f /etc/pf.conf`; LaunchDaemon RunAtLoad/StartInterval, bootout |
+| `t6-extra.sh` | compat и UDP-endpoint без состояния, UDP-поток до включения pf, имя процесса токена в References |
 | `flow.py` | долгий TCP/TLS/UDP-поток от заданного пользователя |
 
 Каждая проба печатает `RESULT <id> <класс> <деталь>`: WORKS / FAILS (должно пройти), BLOCKED / LEAK (должно быть закрыто),
