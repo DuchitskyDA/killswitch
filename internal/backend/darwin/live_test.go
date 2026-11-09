@@ -1,6 +1,6 @@
 //go:build darwin && darwinlive
 
-// Живые тесты: только на одноразовом раннере macOS под root, после `killswitch on` (smoke-darwin.yml).
+// Живые тесты: только на одноразовом раннере macOS под root, после `killswitch on` (workflow ci, job live-darwin).
 // Политика дыма: доверены root, пользователь раннера и _mdnsresponder; пробы — от KS_PROBE_USER.
 package darwin
 

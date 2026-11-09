@@ -161,7 +161,7 @@ jobs:
         timeout-minutes: 8
         env:
           WG_VERSION: '0.5.3'
-          WG_SHA256: ''
+          WG_SHA256: '76fcec042c5989c5b816cd32eaed1e5b1c3b998a4b1c9eca55f299e3314ef7e4'
         run: ./ci/windows/wgnt.ps1
 
       - name: cleanup
