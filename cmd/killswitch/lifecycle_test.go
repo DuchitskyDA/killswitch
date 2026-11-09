@@ -258,3 +258,13 @@ func TestPlanAfterFailedFirstApplyShowsOn(t *testing.T) {
 	eq(t, h.run("plan"), exitOK)
 	eq(t, strings.HasPrefix(h.out.String(), "mode=on "), true)
 }
+
+func TestOnWithOtherConfigBecomesServiceConfig(t *testing.T) {
+	h := newHarness(t, baseConfig)
+	other := filepath.Join(t.TempDir(), "other.toml")
+	noErr(t, os.WriteFile(other, []byte("# другой конфиг\n"+baseConfig), 0o600))
+	eq(t, h.run("-config", other, "on"), exitOK)
+	got, err := os.ReadFile(filepath.Join(h.dir, "config.toml"))
+	noErr(t, err)
+	eq(t, string(got), "# другой конфиг\n"+baseConfig)
+}

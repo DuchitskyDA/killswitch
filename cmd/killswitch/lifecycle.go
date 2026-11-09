@@ -31,6 +31,9 @@ func (a *app) transition(target policy.Mode) error {
 	if err != nil {
 		return err
 	}
+	if err := a.adoptConfig(); err != nil {
+		return fail(exitApply, "config.toml: %v", err)
+	}
 	e, err := a.bootSnapshot(p, st, env.HealthUnknown)
 	if err != nil {
 		return err
