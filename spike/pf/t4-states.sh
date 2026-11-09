@@ -20,14 +20,14 @@ alive() { # $1 метка $2 от $3 до → ALIVE(n) | DEAD
 }
 plus() { awk -v a="$1" -v b="$2" 'BEGIN{printf "%.2f", a+b}'; }
 
-for fl in default any; do
+for fl in default any nostate; do
   log "4.0-$fl: потоки открыты при выключенном pf, затем pf -E и strict (tcp-правило доверенного: flags $fl)"
   flow p0$fl "$PROBE_UID" tcp 1.0.0.1 80
   flow e0$fl "$TRUST_UID" tls 1.1.1.1 443
   sleep 3
   t0=$(now)
   pf_enable_token >/dev/null
-  if [ $fl = any ]; then FLAGS="flags any" policy strict keep; else policy strict keep; fi | load_anchor "$ANCHOR"
+  case $fl in any) FLAGS="flags any" policy strict keep ;; nostate) policy strict no ;; *) policy strict keep ;; esac | load_anchor "$ANCHOR"
   run pfctl -a "$ANCHOR" -sr
   sleep 5; t1=$(now)
   pre=$(alive p0$fl "$(plus "$t0" -3)" "$t0"); post=$(alive p0$fl "$(plus "$t0" 2)" "$t1")
