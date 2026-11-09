@@ -23,6 +23,7 @@ type Config struct {
 	Iface      string `json:"iface"`
 	PrivateKey string `json:"private_key"`
 	ListenPort int    `json:"listen_port"`
+	FwMark     int    `json:"fwmark,omitempty"` // fwmark транспорта (как wg-quick: 0xca6c); 0 — не ставить
 	Peers      []Peer `json:"peers"`
 }
 
@@ -37,6 +38,9 @@ func Apply(c Config) error {
 		return err
 	}
 	cfg := wgtypes.Config{PrivateKey: &key, ListenPort: &c.ListenPort, ReplacePeers: true}
+	if c.FwMark != 0 {
+		cfg.FirewallMark = &c.FwMark
+	}
 	for _, p := range c.Peers {
 		pub, err := wgtypes.ParseKey(p.PublicKey)
 		if err != nil {
@@ -72,7 +76,7 @@ func Show(iface string) (string, error) {
 		return "", err
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s listen=%d peers=%d", d.Name, d.ListenPort, len(d.Peers))
+	fmt.Fprintf(&b, "%s listen=%d fwmark=0x%x peers=%d", d.Name, d.ListenPort, d.FirewallMark, len(d.Peers))
 	for _, p := range d.Peers {
 		hs := "никогда"
 		if !p.LastHandshakeTime.IsZero() {

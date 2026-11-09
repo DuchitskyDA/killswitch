@@ -5,14 +5,17 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net"
 	"net/netip"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -30,6 +33,10 @@ func dispatch(cmd string, args []string) error {
 	switch cmd {
 	case "run":
 		return lab.Main(args, os.Stdout)
+	case "accept":
+		return lab.Accept(args, os.Stdout)
+	case "ksexec":
+		return ksexec(args)
 	case "cleanup":
 		return lab.Cleanup(os.Stdout)
 	case "nsexec":
@@ -82,8 +89,19 @@ func nsexec(args []string) error {
 }
 
 func serve(args []string) error {
-	if _, err := inner("serve", args, func(*flag.FlagSet) {}); err != nil {
+	var addrList *string
+	if _, err := inner("serve", args, func(fs *flag.FlagSet) {
+		addrList = fs.String("addrs", topo.InetV4.String()+","+topo.InetV6.String(), "адреса сервисов через запятую")
+	}); err != nil {
 		return err
+	}
+	var addrs []netip.Addr
+	for _, s := range strings.Split(*addrList, ",") {
+		a, err := netip.ParseAddr(strings.TrimSpace(s))
+		if err != nil {
+			return err
+		}
+		addrs = append(addrs, a)
 	}
 	ctx, cancel := signalCtx()
 	defer cancel()
@@ -92,7 +110,7 @@ func serve(args []string) error {
 	errc := make(chan error, 1)
 	go func() {
 		errc <- services.Serve(ctx, services.Config{
-			Addrs: []netip.Addr{topo.InetV4, topo.InetV6}, AnswerA: topo.DNSAnswerA, AnswerAAAA: topo.DNSAnswerAAAA,
+			Addrs: addrs, AnswerA: topo.DNSAnswerA, AnswerAAAA: topo.DNSAnswerAAAA,
 			HTTPPort: topo.HTTPPort, UDPPort: topo.UDPPort, DNSPort: topo.DNSPort,
 		}, func(e services.Entry) { mu.Lock(); enc.Encode(e); mu.Unlock() })
 	}()
@@ -120,7 +138,7 @@ func captureCmd(args []string) error {
 
 func probeCmd(args []string) error {
 	var kind, dst, bind *string
-	var port *uint
+	var port, uid, sport, mark *uint
 	var timeout *time.Duration
 	_, err := inner("probe", args, func(fs *flag.FlagSet) {
 		kind = fs.String("kind", "http", "http|udp|dnsudp|dnstcp")
@@ -128,15 +146,24 @@ func probeCmd(args []string) error {
 		port = fs.Uint("port", 80, "порт")
 		bind = fs.String("bind", "", "интерфейс SO_BINDTODEVICE")
 		timeout = fs.Duration("timeout", 1500*time.Millisecond, "")
+		uid = fs.Uint("uid", 0, "понизить права до uid (и gid того же номера) после сверки ns")
+		sport = fs.Uint("sport", 0, "порт-источник")
+		mark = fs.Uint("mark", 0, "SO_MARK")
 	})
 	if err != nil {
 		return err
+	}
+	if *uid != 0 {
+		if err := dropTo(int(*uid)); err != nil {
+			return err
+		}
 	}
 	a, err := netip.ParseAddr(*dst)
 	if err != nil {
 		return err
 	}
-	r := probe.Run(probe.Spec{Kind: probe.Kind(*kind), Dst: a, Port: uint16(*port), Bind: *bind, Timeout: *timeout})
+	r := probe.Run(probe.Spec{Kind: probe.Kind(*kind), Dst: a, Port: uint16(*port), Bind: *bind, Timeout: *timeout,
+		SrcPort: uint16(*sport), Mark: uint32(*mark)})
 	return json.NewEncoder(os.Stdout).Encode(r)
 }
 
@@ -179,4 +206,43 @@ func wgsetCmd(args []string) error {
 		return err
 	}
 	return wgset.Apply(c)
+}
+
+// dropTo понижает права пробы: сверка ns (stat /proc/1/ns/net) уже прошла от root, дальше — «обычная программа».
+func dropTo(uid int) error {
+	if err := syscall.Setgroups(nil); err != nil {
+		return err
+	}
+	if err := syscall.Setgid(uid); err != nil {
+		return err
+	}
+	return syscall.Setuid(uid)
+}
+
+// ksexec — запуск killswitch (или раннего юнита) внутри ksl-client и mount ns держателя: сверка обоих inode,
+// tmpfs поверх IsolatedDirs и заглушка systemctl в PATH — до exec. Иначе выход 2.
+func ksexec(args []string) error {
+	var mnt *uint64
+	var stub *string
+	var ino *uint64
+	fs := flag.NewFlagSet("ksexec", flag.ContinueOnError)
+	ino = fs.Uint64("expect-ino", 0, "inode network namespace ksl-client")
+	mnt = fs.Uint64("expect-mnt", 0, "inode mount namespace держателя")
+	stub = fs.String("stub", "", "каталог заглушки systemctl")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := nsguard.CheckExec(nsguard.Exec{Ino: *ino, Mnt: *mnt, Stub: *stub, SelfNet: nsguard.SelfCheck,
+		SelfMnt: nsguard.SelfCheckMount, IsTmpfs: nsguard.IsTmpfs, LookPath: exec.LookPath}); err != nil {
+		return err
+	}
+	argv := fs.Args()
+	if len(argv) == 0 {
+		return errors.New("ksexec: нет команды")
+	}
+	path, err := exec.LookPath(argv[0])
+	if err != nil {
+		return err
+	}
+	return syscall.Exec(path, argv, os.Environ())
 }

@@ -33,6 +33,8 @@ type Spec struct {
 	Dst     netip.Addr
 	Port    uint16
 	Bind    string // интерфейс для SO_BINDTODEVICE; пусто — по маршрутам
+	SrcPort uint16 // порт-источник; 0 — эфемерный
+	Mark    uint32 // SO_MARK; 0 — без метки
 	Timeout time.Duration
 }
 
@@ -74,7 +76,10 @@ func shortErr(err error) string {
 func run(s Spec) (Result, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.Timeout)
 	defer cancel()
-	d := net.Dialer{Control: bindControl(s.Bind)}
+	d := net.Dialer{Control: control(s.Bind, s.Mark)}
+	if s.SrcPort != 0 {
+		d.LocalAddr = localAddr(s.Kind, s.SrcPort)
+	}
 	addr := netip.AddrPortFrom(s.Dst, s.Port).String()
 	deadline, _ := ctx.Deadline()
 	switch s.Kind {
@@ -185,4 +190,12 @@ func dns(ctx context.Context, d net.Dialer, s Spec, addr string, deadline time.T
 	}
 	r.OK = true
 	return r, nil
+}
+
+// localAddr — фиксированный порт-источник на любом адресе (адрес выберет маршрут или привязка к интерфейсу).
+func localAddr(k Kind, port uint16) net.Addr {
+	if k == UDP || k == DNSUDP {
+		return &net.UDPAddr{Port: int(port)}
+	}
+	return &net.TCPAddr{Port: int(port)}
 }
