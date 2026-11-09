@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Цели check для дыма: HTTP 80, UDP-эхо 443, DNS 53 (UDP и TCP — эхо) на адресе из argv[1].
-Только на одноразовом раннере macOS (smoke-darwin.yml); останавливается по таймауту argv[2] секунд."""
+Только на одноразовом раннере macOS (ci.yml, live-darwin); останавливается по таймауту argv[2] секунд."""
 import socket
 import sys
 import threading

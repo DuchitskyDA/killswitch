@@ -1,4 +1,4 @@
-# Общее для дыма pf-backend на одноразовом раннере macOS (smoke-darwin.yml). Только под root на ВМ раннера.
+# Общее для дыма pf-backend на одноразовом раннере macOS (ci.yml, live-darwin). Только под root на ВМ раннера.
 KS=/private/tmp/ks-smoke
 OUT="$KS/out"
 RES="$OUT/results.txt"

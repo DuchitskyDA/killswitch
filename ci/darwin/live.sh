@@ -1,6 +1,6 @@
 #!/bin/sh
 # Дымовой прогон pf-backend: on → пробы → check → чужие вмешательства → off → uninstall без конфига.
-# Только под root на одноразовом раннере macOS (smoke-darwin.yml). Итог — строки RESULT; любой FAIL — код 1.
+# Только под root на одноразовом раннере macOS (ci.yml, live-darwin). Итог — строки RESULT; любой FAIL — код 1.
 . /private/tmp/ks-smoke/lib.sh
 RUNNER_UID=$(cat "$KS/runner_uid")
 
