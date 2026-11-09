@@ -44,6 +44,13 @@ type Preparer interface {
 	BeforeProbe(id ProbeID) error
 }
 
+// Finisher — необязательно у EvidenceSource: уборка после пробы (вернуть сбор событий в исходное состояние).
+// Run вызывает его ровно один раз на каждую отправляемую пробу, на любом исходе: BLOCKED, LEAK, сбой привязки
+// или подготовки.
+type Finisher interface {
+	AfterProbe(id ProbeID)
+}
+
 // Input — что проверять.
 type Input struct {
 	Targets    []netip.Addr
@@ -104,6 +111,9 @@ func (r *runner) direct(s Service, dst netip.Addr, phys env.Iface, baseline stri
 	}
 	id := ProbeID{Proto: s.Proto, Src: netip.AddrPortFrom(src, r.nextPort()), Dst: netip.AddrPortFrom(dst, s.Port),
 		Iface: phys.Name, At: r.now()}
+	if fin, ok := r.ev.(Finisher); ok {
+		defer fin.AfterProbe(id)
+	}
 	if prep, ok := r.ev.(Preparer); ok {
 		if err := prep.BeforeProbe(id); err != nil {
 			return Inconclusive, "свидетельство не подготовлено: " + err.Error()
