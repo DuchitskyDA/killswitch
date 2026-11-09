@@ -297,6 +297,7 @@ func (b *Backend) Remove() error {
 // record — что мы загрузили последним: план, его чтение сразу после загрузки и режим из заголовка.
 type record struct {
 	text, loaded string
+	hasLoaded    bool // readback записан: без него набор не наш — Apply не завершился
 	mode         policy.Mode
 }
 
@@ -305,8 +306,8 @@ func (b *Backend) readRecord() (record, bool) {
 	if err != nil {
 		return record{}, false
 	}
-	loaded, _ := os.ReadFile(b.paths.loadedFile())
-	rec := record{text: string(text), loaded: string(loaded)}
+	loaded, err := os.ReadFile(b.paths.loadedFile())
+	rec := record{text: string(text), loaded: string(loaded), hasLoaded: err == nil}
 	first, _, _ := strings.Cut(rec.text, "\n")
 	if m, ok := strings.CutPrefix(first, headerMode); ok {
 		rec.mode = policy.Mode(m)
@@ -328,7 +329,7 @@ func (b *Backend) Status() (backend.Status, error) {
 	}
 	now := ruleLines(cur)
 	s.Rules = len(now)
-	consistent := recorded && slicesEqual(now, ruleLines(rec.loaded))
+	consistent := recorded && rec.hasLoaded && slicesEqual(now, ruleLines(rec.loaded))
 	if consistent {
 		s.Hash = backend.HashOf(Rules{Text: rec.text})
 	} else {

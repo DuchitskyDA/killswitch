@@ -121,7 +121,7 @@ func TestStatusCanaryMissIsLeakOnly(t *testing.T) {
 	f := newFixture(t)
 	f.healthy()
 	f.apply(onRules())
-	f.run.replies["pfctl -a "+Anchor+" -vsr"] = []Result{{Out: canaryCounters("3")}}
+	f.b.canary = func() error { return nil } // пакет не дошёл: счётчик не растёт
 	s := status(t, f.b)
 	if repair, ok := kinds(s)["anchor-unreachable"]; !ok || repair || s.AnchorOK {
 		t.Errorf("канарейка не дошла — LEAK без Repair, AnchorOK=false, получено %+v", s)
@@ -306,5 +306,20 @@ func TestApplyCopiesBinaryForDaemon(t *testing.T) {
 	got, err := os.ReadFile(f.paths.binary())
 	if err != nil || string(got) != string(want) {
 		t.Errorf("копия бинарника для LaunchDaemon: err=%v содержимое %q", err, got)
+	}
+}
+
+// Сбой загрузки при восстановлении пустого якоря: записи readback нет — это дрейф, а не совпадение с пустым якорем.
+func TestEmptyAnchorWithoutLoadedRecordIsDrift(t *testing.T) {
+	f := newFixture(t)
+	f.healthy()
+	f.apply(onRules())
+	f.run.replies["pfctl -a "+Anchor+" -sr"] = []Result{{Out: ""}}
+	f.run.replies["pfctl -a "+Anchor+" -vsr"] = []Result{{Out: ""}}
+	f.run.fails["pfctl -a "+Anchor+" -f "+f.paths.rulesFile()+".new"] = true
+	_ = f.b.Apply(onRules())
+	s, err := f.b.Status()
+	if repair, ok := kinds(s)["anchor-drift"]; err != nil || !ok || !repair {
+		t.Errorf("пустой якорь без записи readback: дрейф с Repair и без ошибки Status, получено %+v %v", s.Structural, err)
 	}
 }

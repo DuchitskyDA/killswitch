@@ -112,7 +112,9 @@ func (f *fixture) healthy() {
 	f.run.on("pfctl -a "+Anchor+" -sr", anchorReadback)
 	f.run.on("pfctl -s info", infoEnabled)
 	f.run.on("pfctl -s References", refsOurs)
-	f.run.on("pfctl -a "+Anchor+" -vsr", canaryCounters("3"), canaryCounters("4"))
+	f.run.on("pfctl -a "+Anchor+" -vsr", canaryCounters("3"))
+	// Счётчик канарейки растёт только от отправленного пакета.
+	f.b.canary = func() error { f.run.on("pfctl -a "+Anchor+" -vsr", canaryCounters("4")); return nil }
 }
 
 func (f *fixture) apply(r Rules) {
