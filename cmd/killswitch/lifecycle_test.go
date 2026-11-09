@@ -268,3 +268,14 @@ func TestOnWithOtherConfigBecomesServiceConfig(t *testing.T) {
 	noErr(t, err)
 	eq(t, string(got), "# другой конфиг\n"+baseConfig)
 }
+
+func TestRejectedPlanKeepsServiceConfig(t *testing.T) {
+	h := newHarness(t, baseConfig)
+	other := filepath.Join(t.TempDir(), "other.toml")
+	noErr(t, os.WriteFile(other, []byte("# другой конфиг\n"+baseConfig), 0o600))
+	h.fb.PlanErr = backend.ErrConfig
+	eq(t, h.run("-config", other, "on"), exitConfig)
+	got, err := os.ReadFile(filepath.Join(h.dir, "config.toml"))
+	noErr(t, err)
+	eq(t, string(got), baseConfig)
+}
