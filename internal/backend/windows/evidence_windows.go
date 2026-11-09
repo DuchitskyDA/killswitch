@@ -14,12 +14,10 @@ const (
 	evidenceStep = 250 * time.Millisecond
 )
 
-// evidenceState — включали ли мы сбор событий сами (тогда выключаем после пробы).
-type evidenceState struct {
-	enabledByUs bool
-}
-
-var _ probe.Preparer = (*Backend)(nil)
+var (
+	_ probe.Preparer = (*Backend)(nil)
+	_ probe.Finisher = (*Backend)(nil)
+)
 
 // BeforeProbe включает сбор событий отброса на время пробы.
 func (b *Backend) BeforeProbe(probe.ProbeID) error {
@@ -30,18 +28,22 @@ func (b *Backend) BeforeProbe(probe.ProbeID) error {
 		return err
 	}
 	defer s.Close()
-	on, err := s.CollectNetEvents()
+	return prepareCollection(s, &b.evid)
+}
+
+// AfterProbe возвращает сбор событий в исходное состояние (вызывается на любом исходе пробы).
+func (b *Backend) AfterProbe(probe.ProbeID) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.evid.enabledByUs {
+		return
+	}
+	s, err := openSession()
 	if err != nil {
-		return fmt.Errorf("опция сбора событий WFP: %w", err)
+		return
 	}
-	if on {
-		return nil
-	}
-	if err := s.SetCollectNetEvents(true); err != nil {
-		return fmt.Errorf("включить сбор событий WFP: %w", err)
-	}
-	b.evid.enabledByUs = true
-	return nil
+	defer s.Close()
+	finishCollection(s, &b.evid)
 }
 
 // Evidence — событие отброса пробы id нашим block-фильтром после since.
@@ -53,7 +55,6 @@ func (b *Backend) Evidence(id probe.ProbeID, since time.Time) (bool, error) {
 		return false, err
 	}
 	defer s.Close()
-	defer b.restoreCollection(s)
 	ours, err := ourBlockIDs(s)
 	if err != nil {
 		return false, err
@@ -74,13 +75,6 @@ func (b *Backend) Evidence(id probe.ProbeID, since time.Time) (bool, error) {
 			return false, nil
 		}
 		time.Sleep(evidenceStep)
-	}
-}
-
-func (b *Backend) restoreCollection(s *wf.Session) {
-	if b.evid.enabledByUs {
-		_ = s.SetCollectNetEvents(false)
-		b.evid.enabledByUs = false
 	}
 }
 

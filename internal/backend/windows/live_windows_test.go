@@ -64,7 +64,7 @@ func applyConfig(t *testing.T, b *Backend) {
 func TestLiveEvidence(t *testing.T) {
 	onRunner(t)
 	b := New()
-	id := probe.ProbeID{Proto: "tcp", Src: netip.MustParseAddrPort("0.0.0.0:61010"),
+	id := probe.ProbeID{Proto: "tcp", Src: netip.MustParseAddrPort("0.0.0.0:30010"),
 		Dst: netip.MustParseAddrPort("1.1.1.1:80"), At: time.Now()}
 	if err := b.BeforeProbe(id); err != nil {
 		t.Fatal(err)
@@ -80,6 +80,7 @@ func TestLiveEvidence(t *testing.T) {
 		dumpDrops(t, id.At)
 		t.Fatalf("нет свидетельства отброса нашим фильтром: dropped=%v err=%v (dial: %v)", dropped, err, dialErr)
 	}
+	b.AfterProbe(id)
 	t.Logf("проба отброшена: %v", dialErr)
 }
 
@@ -129,6 +130,30 @@ func dumpSublayers(t *testing.T) {
 		if r.Action == wf.ActionPermit && r.HardAction {
 			t.Logf("diag: hard permit %q sublayer=%s weight=%d conds=%d", r.Name, r.Sublayer, r.Weight, len(r.Conditions))
 		}
+	}
+}
+
+// TestLiveCollectionRestored: сбор событий выключен до пробы — BeforeProbe включает, AfterProbe выключает обратно.
+func TestLiveCollectionRestored(t *testing.T) {
+	onRunner(t)
+	s, err := openSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.SetCollectNetEvents(false); err != nil {
+		t.Fatal(err)
+	}
+	b := New()
+	id := probe.ProbeID{Proto: "tcp", Dst: netip.MustParseAddrPort("1.1.1.1:80"), At: time.Now()}
+	if err := b.BeforeProbe(id); err != nil {
+		t.Fatal(err)
+	}
+	during, _ := s.CollectNetEvents()
+	b.AfterProbe(id)
+	after, err := s.CollectNetEvents()
+	if err != nil || !during || after {
+		t.Errorf("сбор: во время пробы=%v (нужно true), после=%v (нужно false), err=%v", during, after, err)
 	}
 }
 

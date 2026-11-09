@@ -133,7 +133,7 @@ jobs:
       - name: evidence — drop event of our filter
         timeout-minutes: 3
         run: |
-          & "$env:KS\live.test.exe" '-test.run=^TestLiveEvidence$' '-test.v'
+          & "$env:KS\live.test.exe" '-test.run=^(TestLiveEvidence|TestLiveCollectionRestored)$' '-test.v'
           if ($LASTEXITCODE -ne 0) { throw "TestLiveEvidence: $LASTEXITCODE" }
 
       - name: off and repair (after the CLI process exits)
