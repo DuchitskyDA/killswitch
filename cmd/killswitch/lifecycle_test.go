@@ -279,3 +279,27 @@ func TestRejectedPlanKeepsServiceConfig(t *testing.T) {
 	noErr(t, err)
 	eq(t, string(got), baseConfig)
 }
+
+// configSwapBackend меняет исходный конфиг посреди Snapshot — как редактор во время долгого разрешения имён.
+type configSwapBackend struct {
+	backend.Backend
+	duringSnapshot func()
+}
+
+func (b configSwapBackend) Snapshot(p policy.Policy) (env.Env, error) {
+	b.duringSnapshot()
+	return b.Backend.Snapshot(p)
+}
+
+func TestAdoptsExactlyPlannedConfig(t *testing.T) {
+	h := newHarness(t, baseConfig)
+	other := filepath.Join(t.TempDir(), "other.toml")
+	noErr(t, os.WriteFile(other, []byte("# другой конфиг\n"+baseConfig), 0o600))
+	d := h.deps()
+	b := configSwapBackend{Backend: h.fb, duringSnapshot: func() { noErr(t, os.WriteFile(other, []byte("unknown_key = true\n"), 0o600)) }}
+	d.backend = func() (backend.Backend, error) { return b, nil }
+	eq(t, run(context.Background(), []string{"-config", other, "on"}, d), exitOK)
+	got, err := os.ReadFile(filepath.Join(h.dir, "config.toml"))
+	noErr(t, err)
+	eq(t, string(got), "# другой конфиг\n"+baseConfig)
+}

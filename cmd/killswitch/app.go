@@ -54,6 +54,7 @@ type app struct {
 	d          deps
 	b          backend.Backend
 	configPath string
+	configData []byte // байты последнего проверенного loadPolicy конфига; их и принимает служба
 }
 
 // cliError — ошибка с кодом выхода.
@@ -130,9 +131,9 @@ func (a *app) adoptConfig() error {
 	if filepath.Clean(a.configPath) == filepath.Clean(own) {
 		return nil
 	}
-	data, err := os.ReadFile(a.configPath)
-	if err != nil {
-		return err
+	data := a.configData
+	if data == nil {
+		return errors.New("конфиг не проверен до копирования")
 	}
 	if err := os.MkdirAll(a.d.dir, 0o755); err != nil {
 		return err
@@ -161,6 +162,7 @@ func (a *app) loadPolicy(mode policy.Mode) (policy.Policy, error) {
 	if err != nil {
 		return policy.Policy{}, fail(exitConfig, "%v", err)
 	}
+	a.configData = data
 	caps := a.b.Capabilities()
 	layer, err := a.profileLayer(cfg.Profile, caps.OS)
 	if err != nil {
