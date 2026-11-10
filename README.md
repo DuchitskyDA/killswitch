@@ -117,7 +117,8 @@ SmartScreen один раз покажет «Система Windows защити
 & "$env:ProgramFiles\killswitch\killswitch.exe" status         # команды установленной программы
 ```
 
-С `-config` при первой установке файл становится config.toml службы, и защита включается. Программа не попадает в
+С `-config` при первой установке файл становится config.toml службы, и защита включается; при уже установленной
+программе настройки заменяются, а режим остаётся прежним. Программа не попадает в
 `PATH`: команды вызываются по полному пути, как в последней строке.
 
 **Почему клиент туннеля должен быть остановлен.** WFP не держит два подслоя с весом 0xFFFF: созданный позже получает
@@ -209,7 +210,8 @@ go build -o killswitch ./cmd/killswitch        # на Windows: -o killswitch.exe
 
 - Windows: запустите новый `killswitch-windows-amd64.exe` двойным кликом (или `install` из консоли администратора). Он
   заменит копию в `%ProgramFiles%\killswitch`, обновит службу, ярлык и запись в «Приложениях». Открытое окно не мешает.
-- macOS: `brew upgrade --cask killswitch`.
+- macOS: `brew upgrade --cask killswitch`. Homebrew снимает прежнюю версию и ставит новую: на эти несколько секунд
+  защиты нет, затем прежний режим возвращается.
 
 **Удаление.**
 
@@ -839,7 +841,8 @@ installation fails, an error dialog shows the reason. The same without the windo
 & "$env:ProgramFiles\killswitch\killswitch.exe" status         # commands of the installed program
 ```
 
-With `-config`, on the first installation the file becomes the service's config.toml and protection turns on. The
+With `-config`, on the first installation the file becomes the service's config.toml and protection turns on; on an
+existing installation the settings are replaced and the mode stays as it was. The
 program is not on `PATH`: call it by full path, as in the last line.
 
 Why the tunnel client must be stopped: WFP does not keep two sublayers with weight 0xFFFF; the one created later gets
@@ -900,7 +903,8 @@ Updating does not change the protection mode.
 - Windows: run the new `killswitch-windows-amd64.exe` (double-click, or `install` from an administrator console). It
   replaces the copy in `%ProgramFiles%\killswitch` and updates the service, shortcut and Apps entry; an open window
   does not get in the way.
-- macOS: `brew upgrade --cask killswitch`.
+- macOS: `brew upgrade --cask killswitch`. Homebrew removes the old version and installs the new one: protection is
+  off for those few seconds, then the previous mode is restored.
 
 Uninstall:
 
