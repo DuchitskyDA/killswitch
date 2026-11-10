@@ -6,12 +6,15 @@
 
 English summary — [в конце](#english).
 
-Готовые сборки — на странице [Releases](https://github.com/DuchitskyDA/killswitch/releases); можно собрать и из исходников (см. «Установка»).
+Готовые сборки — на странице [Releases](https://github.com/DuchitskyDA/killswitch/releases): на Windows — один файл
+двойным кликом, на macOS — `brew install --cask duchitskyda/tap/killswitch`. Можно собрать и из исходников (см.
+[Установка](#установка)).
 
 ## Содержание
 
 - [Что делает и чего не делает](#что-делает-и-чего-не-делает)
 - [Установка](#установка)
+- [Обновление и удаление](#обновление-и-удаление)
 - [Окно](#окно)
 - [Меню](#меню)
 - [Команды и коды возврата](#команды-и-коды-возврата)
@@ -74,39 +77,94 @@ macOS — LaunchDaemon. Он пересчитывает правила раз в
 
 ## Установка
 
-**Готовые сборки.** На странице [Releases](https://github.com/DuchitskyDA/killswitch/releases) у каждого выпуска лежат пять бинарников, `menu.ps1` и
-`SHA256SUMS`. Скачайте файл своей ОС — `killswitch-<ос>-<арх>` — и `SHA256SUMS`, сверьте сумму:
-
-- Linux: `sha256sum -c --ignore-missing SHA256SUMS`;
-- macOS: `shasum -a 256 killswitch-darwin-arm64` (на Intel — `killswitch-darwin-amd64`) — строка должна совпасть со
-  строкой этого файла в `SHA256SUMS`;
-- Windows (PowerShell): `(Get-FileHash .\killswitch-windows-amd64.exe -Algorithm SHA256).Hash` — значение должно
-  совпасть без учёта регистра с суммой этого файла в `SHA256SUMS`; так же сверьте `menu.ps1`.
-
-Перед установкой переименуйте файл в `killswitch` (`killswitch.exe`).
-
-**Сборка из исходников.** Нужен Go 1.26 или новее:
-
-```sh
-git clone https://github.com/DuchitskyDA/killswitch
-cd killswitch
-go build -o killswitch ./cmd/killswitch        # на Windows: -o killswitch.exe
-```
-
-Под другую ОС — как в CI: `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -o killswitch.exe ./cmd/killswitch`.
-Поддержаны linux/amd64, linux/arm64, darwin/arm64, darwin/amd64 и windows/amd64.
-
-**Артефакты CI.** Сборку любого коммита можно взять из CI: каждый прогон workflow `ci` собирает те же пять бинарников, `menu.ps1` и `SHA256SUMS`. Они лежат в артефакте
-`killswitch-<коммит>` на странице прогона во вкладке Actions (скачать может только вошедший в GitHub). Суммы сверяются
-так же, как у готовых сборок.
+На Windows killswitch ставится одним файлом, на macOS — одной командой Homebrew, на Linux — вручную. Готовые сборки
+лежат на странице [Releases](https://github.com/DuchitskyDA/killswitch/releases). У выпуска (с v0.2.0) там пять
+бинарников `killswitch-<ос>-<арх>`, два архива `killswitch-darwin-arm64.zip` и `killswitch-darwin-amd64.zip`
+с `killswitch.app` и `SHA256SUMS`. Перед запуском [сверьте сумму](#проверка-загрузки-sha256sums).
 
 Защиту включает `on`: из окна, из меню («Включить защиту») или командой. Перед этим проверьте, что профиль или
 `[[trust]]` доверяет клиенту туннеля. Иначе клиент не дойдёт до своего сервера, и выхода в сеть не будет совсем.
 
+### Windows
+
+Остановите клиент туннеля (почему — ниже) и дважды щёлкните по `killswitch-windows-amd64.exe`. Файл без подписи:
+SmartScreen один раз покажет «Система Windows защитила ваш компьютер» — нажмите «Подробнее» → «Выполнить в любом
+случае». Затем UAC спросит права администратора. Что делает установка:
+
+1. создаёт `%ProgramFiles%\killswitch` (копия программы) и `%ProgramData%\killswitch` (state.json и config.toml) и
+   задаёт обоим каталогам точные права: владелец — Администраторы, писать могут только Администраторы и SYSTEM,
+   Пользователи — только читать и запускать; прежние записи прав не сохраняются, новый каталог создаётся сразу с этими
+   правами. Если каталог уже есть и в него может писать не администратор, его владелец — не Администраторы, SYSTEM
+   или TrustedInstaller или это ссылка, установка останавливается с «небезопасный каталог»: его содержимое мог подложить обычный пользователь.
+   Проверьте и удалите каталог, затем запустите установку снова;
+2. копирует себя в `%ProgramFiles%\killswitch\killswitch.exe`. Имя скачанного файла значения не имеет;
+3. если это первая установка, а config.toml в `%ProgramData%\killswitch` уже есть (например, остался после
+   удаления), сразу включает защиту (`on`);
+4. регистрирует службу `killswitch` (`killswitch.exe enforce`, автозапуск, при сбое — перезапуск через 5 секунд) и
+   запускает её;
+5. кладёт на общий рабочий стол ярлык `killswitch`, который открывает [окно](#окно) с правами администратора;
+6. добавляет killswitch в «Параметры → Приложения»;
+7. открывает окно.
+
+Без config.toml защита не включается: в окне задайте и сохраните настройки и включите защиту. Если установка не
+удалась, причину покажет окно с ошибкой.
+
+То же без окна — из PowerShell от имени администратора:
+
+```powershell
+.\killswitch-windows-amd64.exe install                         # установка
+.\killswitch-windows-amd64.exe -config .\config.toml install   # сразу с настройками
+& "$env:ProgramFiles\killswitch\killswitch.exe" status         # команды установленной программы
+```
+
+С `-config` при первой установке файл становится config.toml службы, и защита включается. Программа не попадает в
+`PATH`: команды вызываются по полному пути, как в последней строке.
+
+**Почему клиент туннеля должен быть остановлен.** WFP не держит два подслоя с весом 0xFFFF: созданный позже получает
+0xFFFE. Свой подслой killswitch создаёт при первом применении правил (`on`, `off` или `repair`) и не пересоздаёт до
+`uninstall`. Если в этот момент клиент (например, sing-box со `strict_route`) держит свой подслой 0xFFFF, наш так и
+останется ниже до `uninstall`. Тогда разрешающее правило клиента пробьёт нашу блокировку, и `status`/`check` будут
+показывать `LEAK wfp-tie`. Первое применение — при установке, если config.toml уже есть, иначе — первая кнопка в окне.
+Запускайте клиент после него. Если уже поздно — удалите killswitch и установите заново при остановленном клиенте.
+
+Команда `killswitch on` без установки тоже ставит постоянные фильтры, но службы нет: никто не пересчитает правила,
+когда адаптер туннеля пересоздастся. Ставьте программу установкой.
+
+### macOS
+
+```sh
+brew install --cask duchitskyda/tap/killswitch
+```
+
+Cask ставит `killswitch.app` в «Программы» и снимает с него пометку карантина: программа без подписи Apple, и иначе
+macOS не дала бы её открыть. Откройте killswitch из «Программ» или Launchpad. Системное окно спросит пароль
+администратора (Touch ID для программ без подписи не предлагается), затем откроется [окно](#окно) в браузере по
+умолчанию. Значка в Dock нет.
+
+Первая `on` копирует бинарник и `pfctl` (под именем `killswitchd`) в `/Library/Application Support/killswitch/`. Ещё она
+ставит LaunchDaemon `/Library/LaunchDaemons/io.github.duchitskyda.killswitch.plist`: запуск при загрузке, а если
+наблюдатель завершился — перезапуск не позже чем через 10 секунд; журнал — `/var/log/killswitch.log`. Правила загружаются в якорь pf `com.apple/000.killswitch`.
+
+Программа из терминала (каталог программ по умолчанию — `/Applications`):
+
+```sh
+sudo /Applications/killswitch.app/Contents/MacOS/killswitch          # меню
+sudo /Applications/killswitch.app/Contents/MacOS/killswitch status   # команды
+```
+
+Без Homebrew. Архив `killswitch-darwin-<арх>.zip`: распакуйте, перенесите `killswitch.app` в «Программы» и снимите
+карантин: `xattr -dr com.apple.quarantine /Applications/killswitch.app`. Или один бинарник, без `.app`:
+
+```sh
+sudo install -m 0755 killswitch-darwin-arm64 /usr/local/bin/killswitch   # на Intel — killswitch-darwin-amd64
+sudo killswitch            # меню; или sudo killswitch on при готовом config.toml
+sudo killswitch window     # то же в окне
+```
+
 ### Linux
 
 ```sh
-sudo install -m 0755 killswitch /usr/local/bin/killswitch
+sudo install -m 0755 killswitch-linux-amd64 /usr/local/bin/killswitch   # на arm64 — killswitch-linux-arm64
 sudo killswitch            # меню: «Настройки» → «Применить и сохранить» → «Включить защиту»
 sudo killswitch window     # то же в окне, если есть графический сеанс
 ```
@@ -115,52 +173,59 @@ sudo killswitch window     # то же в окне, если есть графи
 `/var/lib/killswitch/on.nft`. Ещё она ставит и включает `killswitch-early.service` и `killswitch.service` в
 `/etc/systemd/system`. Нужны `nft` и `ip`, для защиты при загрузке и наблюдателя — systemd.
 
-### macOS
+### Проверка загрузки (SHA256SUMS)
+
+Скачайте свой файл и `SHA256SUMS` того же выпуска и сверьте сумму:
+
+- Windows (PowerShell): `(Get-FileHash .\killswitch-windows-amd64.exe -Algorithm SHA256).Hash` — значение должно
+  совпасть без учёта регистра с суммой этого файла в `SHA256SUMS`;
+- macOS: `shasum -a 256 killswitch-darwin-arm64.zip` (на Intel — `killswitch-darwin-amd64.zip`, без `.app` — бинарник
+  `killswitch-darwin-<арх>`) — строка должна совпасть со строкой этого файла в `SHA256SUMS`. При установке через
+  Homebrew сверять не нужно: brew сверяет zip с суммой, записанной в cask;
+- Linux: `sha256sum -c --ignore-missing SHA256SUMS`.
+
+### Сборка из исходников
+
+Нужен Go 1.26 или новее:
 
 ```sh
-sudo install -m 0755 killswitch /usr/local/bin/killswitch
-sudo killswitch            # меню; или sudo killswitch on при готовом config.toml
-sudo killswitch window     # то же в окне
+git clone https://github.com/DuchitskyDA/killswitch
+cd killswitch
+go build -o killswitch ./cmd/killswitch        # на Windows: -o killswitch.exe
 ```
 
-Первая `on` копирует бинарник и `pfctl` (под именем `killswitchd`) в `/Library/Application Support/killswitch/`. Ещё она
-ставит LaunchDaemon `/Library/LaunchDaemons/io.github.duchitskyda.killswitch.plist`: запуск при загрузке и проверка
-каждые 10 секунд, журнал — `/var/log/killswitch.log`. Правила загружаются в якорь pf `com.apple/000.killswitch`.
+Под другую ОС — как в CI: `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -o killswitch.exe ./cmd/killswitch`.
+Поддержаны linux/amd64, linux/arm64, darwin/arm64, darwin/amd64 и windows/amd64. `killswitch.app` собирает
+`ci/darwin/app.sh` (только на macOS).
 
-### Windows
+**Артефакты CI.** Сборку любого коммита можно взять из CI: каждый прогон workflow `ci` собирает те же файлы, что лежат
+в выпуске. Они лежат в артефакте `killswitch-<коммит>` на странице прогона во вкладке Actions (скачать может только
+вошедший в GitHub). Суммы сверяются так же, как у готовых сборок.
 
-Положите `killswitch.exe` и `dist/windows/menu.ps1` в один каталог. Остановите клиент туннеля и запустите:
+## Обновление и удаление
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\menu.ps1                      # установка (-Action install по умолчанию)
-powershell -ExecutionPolicy Bypass -File .\menu.ps1 -Config .\config.toml # установка сразу с настройками
-```
+**Обновление.** Режим защиты при обновлении не меняется: была включена — остаётся включённой, была выключена до
+перезагрузки — так и остаётся.
 
-`menu.ps1` сам запрашивает права администратора (UAC). Что он делает:
+- Windows: запустите новый `killswitch-windows-amd64.exe` двойным кликом (или `install` из консоли администратора). Он
+  заменит копию в `%ProgramFiles%\killswitch`, обновит службу, ярлык и запись в «Приложениях». Открытое окно не мешает.
+- macOS: `brew upgrade --cask killswitch`.
 
-1. копирует `killswitch.exe` и себя в `%ProgramFiles%\killswitch`;
-2. создаёт `%ProgramData%\killswitch` (state.json и config.toml) и задаёт обоим каталогам точные права: владелец —
-   Администраторы, писать могут только Администраторы и SYSTEM, Пользователи — только читать и запускать; прежние
-   записи прав не сохраняются, новый каталог создаётся сразу с этими правами. Если каталог уже есть и в него может писать не администратор, принадлежит не
-   администратору или это ссылка, установка останавливается с «небезопасный каталог»: его содержимое мог подложить
-   обычный пользователь. Проверьте и удалите каталог, настройки передайте ключом `-Config`;
-3. с `-Config` копирует файл в `%ProgramData%\killswitch\config.toml`. Если config.toml там уже есть, сразу выполняет
-   `killswitch on`;
-4. регистрирует службу `killswitch` (`killswitch.exe enforce`, автозапуск, перезапуск при сбое) и запускает её;
-5. кладёт на общий рабочий стол ярлык `killswitch`, который открывает [окно](#окно) с правами администратора.
+**Удаление.**
 
-Без config.toml защита не включается: откройте ярлык, в окне задайте и сохраните настройки и включите защиту.
+- Windows: «Параметры → Приложения → Установленные приложения» → killswitch → «Удалить», или в PowerShell
+  `& "$env:ProgramFiles\killswitch\killswitch.exe" uninstall`. Снимаются служба, правила, ярлык, запись в «Приложениях» и
+  `%ProgramFiles%\killswitch`. Настройки в `%ProgramData%\killswitch` остаются: следующая установка сразу включит
+  защиту с ними (удалите каталог, если они не нужны). Удаление из «Приложений» ошибку не показывает: если запись
+  осталась, запустите ту же команду из консоли администратора, она напечатает причину.
+- macOS: `brew uninstall --cask killswitch` снимает LaunchDaemon, якорь pf, токены и копию программы в
+  `/Library/Application Support/killswitch`. config.toml там остаётся; следующая установка защиту сама не включает.
+  `brew uninstall --cask --zap killswitch` удаляет также `/Library/Application Support/killswitch` и
+  `/var/log/killswitch.log`. Без Homebrew — `sudo /Applications/killswitch.app/Contents/MacOS/killswitch uninstall`
+  (или `sudo killswitch uninstall` для бинарника), затем удалите `killswitch.app` или `/usr/local/bin/killswitch`.
+- Linux: `sudo killswitch uninstall`, затем удалите `/usr/local/bin/killswitch`.
 
-Другие действия: `menu.ps1 -Action uninstall` останавливает и удаляет службу и выполняет `killswitch uninstall`
-(копия exe остаётся для повторного снятия); `menu.ps1 -Action shortcut` заново создаёт ярлык.
-
-**Почему клиент туннеля должен быть остановлен.** WFP не держит два подслоя с весом 0xFFFF: созданный позже получает
-0xFFFE. Свой подслой killswitch создаёт один раз и никогда не пересоздаёт. Если в момент установки клиент (например,
-sing-box со `strict_route`) держит свой подслой 0xFFFF, наш так и останется ниже до `uninstall`. Тогда разрешающее
-правило клиента пробьёт нашу блокировку, и `status`/`check` будут показывать `LEAK wfp-tie`.
-
-Без `menu.ps1` команда `killswitch on` тоже ставит постоянные фильтры, но службы нет: никто не пересчитает правила,
-когда адаптер туннеля пересоздастся. Ставьте через `menu.ps1`.
+Если снятие не удалось, см. [аварийное снятие](#безопасность-и-аварийное-снятие).
 
 ## Окно
 
@@ -168,11 +233,17 @@ sing-box со `strict_route`) держит свой подслой 0xFFFF, на�
 настройки. Окно — страница, встроенная в бинарник. Её отдаёт сам killswitch с адреса `127.0.0.1` на случайном порту,
 наружу этот адрес не виден. Нужны права администратора:
 
-- Windows: ярлык из `menu.ps1` открывает окно сразу от имени администратора. Из консоли — `killswitch window`: без
-  повышения killswitch перезапускает себя через UAC. Окно открывается в Microsoft Edge без адресной строки и вкладок,
-  в отдельном профиле `%LOCALAPPDATA%\killswitch\window`. Нет Edge — страница открывается в браузере по умолчанию.
-- Linux и macOS: `sudo killswitch window`. Страница открывается в браузере по умолчанию от имени пользователя, который
-  вызвал sudo, а не от root.
+- Windows: ярлык `killswitch` на рабочем столе открывает окно сразу от имени администратора; установка открывает его
+  сама. Из консоли — `killswitch window`: без повышения killswitch перезапускает себя через UAC. Окно открывается в
+  Microsoft Edge без адресной строки и вкладок, в отдельном профиле `%LOCALAPPDATA%\killswitch\window`. Нет Edge —
+  страница открывается в браузере по умолчанию.
+- macOS: откройте `killswitch.app` — пароль спросит системное окно. Из терминала —
+  `sudo /Applications/killswitch.app/Contents/MacOS/killswitch window` (бинарник — `sudo killswitch window`); без sudo
+  killswitch тоже спросит пароль системным окном.
+- Linux: `sudo killswitch window`.
+
+На Linux и macOS страница открывается в браузере по умолчанию от имени пользователя, который запустил killswitch, а не
+от root.
 
 Пока окно открыто, работает процесс `killswitch window`: на Windows это свёрнутое окно консоли. Закройте окно или
 вкладку — процесс завершится сам: обычно через несколько секунд, самое большее через полторы минуты. Ctrl+C в консоли
@@ -210,12 +281,14 @@ sing-box со `strict_route`) держит свой подслой 0xFFFF, на�
 
 `killswitch` без аргументов в терминале открывает меню. Оно одно на трёх ОС. Нужны права администратора:
 
-- Windows: без повышения killswitch перезапускает себя через UAC, и меню открывается в новом окне консоли. Ярлык из
-  `menu.ps1` открывает не меню, а [окно](#окно).
-- Linux и macOS: `sudo killswitch`. Без root меню отвечает «нужны права root: запустите sudo killswitch» с кодом 2.
+- Windows: без повышения killswitch перезапускает себя через UAC, и меню открывается в новом окне консоли. Ярлык на
+  рабочем столе открывает не меню, а [окно](#окно), а двойной клик по `killswitch.exe` — [установку](#windows).
+- Linux и macOS: `sudo killswitch` (на macOS из cask — `sudo /Applications/killswitch.app/Contents/MacOS/killswitch`).
+  Без root меню отвечает с кодом 2: на Linux — «нужны права root: запустите sudo killswitch», на macOS — «права
+  администратора не получены: меню работает в терминале: запустите sudo killswitch».
 
-Меню нужен настоящий терминал. В Git Bash и mintty на Windows stdin — канал, а не консоль: killswitch печатает справку
-и выходит с кодом 2. Запускайте из PowerShell, cmd или Windows Terminal либо пользуйтесь командами.
+Меню нужен настоящий терминал: запускайте его из PowerShell, cmd или Windows Terminal. В Git Bash и mintty на Windows
+пользуйтесь командами.
 
 Шапка: `killswitch — защита: <режим>, туннель: <адаптеры>`. Режим — «ВКЛ (on)», «ВЫКЛ до перезагрузки (off)»,
 «починка до перезагрузки (repair)», «не включена» или «правила не загружены». У каждого совпавшего адаптера стоит
@@ -277,7 +350,8 @@ killswitch [-config путь] <команда>
 | `window` | открыть [окно](#окно): состояние, режимы, проверка и настройки на локальной странице |
 | `plan [on\|off\|repair]` | напечатать правила без применения; по умолчанию — записанный режим или on |
 | `enforce` | наблюдатель; его запускает служба |
-| `uninstall` | снять всё наше без конфига и без сети, удалить state.json |
+| `install` | Windows: [установка](#windows) без окна; на других ОС ничего не делает |
+| `uninstall` | снять всё наше без конфига и без сети, удалить state.json; на Windows — ещё службу, ярлык, запись в «Приложениях» и `%ProgramFiles%\killswitch` |
 
 Коды возврата:
 
@@ -583,6 +657,9 @@ Linux:
 macOS:
 
 - Окно без правил после загрузки, до старта LaunchDaemon.
+- `killswitch.app` без подписи Apple: cask снимает с него пометку карантина. Ошибку при открытии из Finder (например,
+  отменён ввод пароля) программа не показывает: если окно не открылось, запустите
+  `sudo /Applications/killswitch.app/Contents/MacOS/killswitch window` в терминале — он напечатает причину.
 - Доверие пользователю (`Trust{user}`) действует только для TCP и UDP. ICMP (ping, traceroute) и IP-фрагменты
   доверенного блокируются: pf не знает, какому пользователю принадлежат такие пакеты. Клиенту туннеля нужен MTU без фрагментации.
 - При каждом применении режима `on` killswitch сбрасывает все состояния pf (`pfctl -F states`). Соединения, которые
@@ -602,7 +679,8 @@ Windows:
   приписываются программе, которая его открыла. WireGuardNT в CI: без доверия наш блок отбрасывает транспорт, с
   доверием `wireguard.exe` отбросов нашим фильтром не было. Это отрицательное свидетельство: соединение с настоящим
   сервером не проверялось.
-- `killswitch uninstall` не удаляет службу: это делает `menu.ps1 -Action uninstall`.
+- Программа без подписи: SmartScreen предупреждает при первом запуске скачанного файла, UAC показывает «неизвестный
+  издатель».
 - В выводе `check` видны служебные подадаптеры фильтров (например `… -WFP … LightWeight Filter-0000`) со строками
   SKIPPED «нет адреса». Это шум, на итог он не влияет.
 
@@ -626,6 +704,11 @@ Linux — лаборатория в network namespace на удалённом Li
 Не проверено нигде: холодная загрузка ОС; порядок подслоёв WFP после перезагрузки; macOS с включённым SIP; IPv6 на
 Windows (у раннера нет маршрута ::/0); OpenVPN, ovpn-dco; utun настоящих клиентов на macOS.
 
+Установка в CI: на Windows — `killswitch.exe install` (отказ на небезопасном каталоге, права каталогов, служба,
+ярлык, запись в «Приложениях», повторная установка, удаление командой из «Приложений»), на macOS — установка cask из
+локального tap, снятие карантина и `brew uninstall --cask`. Вживую не проверены: двойной клик в Проводнике (SmartScreen,
+UAC, окно), открытие `killswitch.app` из Finder с окном пароля, `brew uninstall --zap`.
+
 На раннерах Windows и macOS туннель — sing-box со своим именем адаптера (`ks-tun*`, `utun9*`), а доверие — раннеру и
 sing-box. Поэтому прогоны CI проверяют backend ОС, но не профили клиентов: `verified_on` у профилей для Windows и macOS
 пуст.
@@ -636,7 +719,7 @@ sing-box. Поэтому прогоны CI проверяют backend ОС, но
   `%ProgramData%\killswitch`, `/Library/Application Support/killswitch`, `/var/lib/killswitch` — в нём state.json и
   config.toml.
 - Служба запускает копию бинарника из каталога, куда пишет только администратор: Windows —
-  `%ProgramFiles%\killswitch\killswitch.exe` (права ставит `menu.ps1`), Linux — `/var/lib/killswitch/bin/killswitch`,
+  `%ProgramFiles%\killswitch\killswitch.exe` (права ставит установка), Linux — `/var/lib/killswitch/bin/killswitch`,
   macOS — `/Library/Application Support/killswitch/killswitch`.
 - Все команды, меняющие правила, берут общий системный замок. Windows — mutex `Global\killswitch`: доступ только у
   SYSTEM, Администраторов и создателя объекта. Linux и macOS — `flock` на `<каталог состояния>/state.lock`.
@@ -650,8 +733,10 @@ sing-box. Поэтому прогоны CI проверяют backend ОС, но
    нет или он испорчен — шаг 2.
 2. Снять совсем: `killswitch uninstall`. Ему не нужны ни конфиг, ни сеть: он ищет своё по постоянным именам —
    provider WFP, якорю pf, таблице nft.
-   - Windows: `"%ProgramFiles%\killswitch\killswitch.exe" uninstall` из консоли администратора. Службу затем удаляет
-     `menu.ps1 -Action uninstall` или `sc.exe delete killswitch`.
+   - Windows: `& "$env:ProgramFiles\killswitch\killswitch.exe" uninstall` в PowerShell от имени администратора. Он
+     сначала останавливает и удаляет службу (до минуты), затем снимает правила, ярлык, запись в «Приложениях» и
+     `%ProgramFiles%\killswitch`. Если служба не остановилась, правила остаются: выполните `sc.exe stop killswitch`,
+     дождитесь `STOPPED` в `sc.exe query killswitch`, затем `sc.exe delete killswitch` и повторите `uninstall`.
    - Linux: `sudo /var/lib/killswitch/bin/killswitch uninstall`.
    - macOS: `sudo "/Library/Application Support/killswitch/killswitch" uninstall`.
 
@@ -680,8 +765,9 @@ sing-box. Поэтому прогоны CI проверяют backend ОС, но
 
 - Windows: встроенной команды, которая сняла бы фильтры WFP по provider, нет. Подойдёт любая сборка `killswitch.exe`:
   GUID provider `{8f2c6a41-93d7-4b0e-a5f1-27c94e6d0b3a}` и sublayer `{c3e18b5d-0f64-4a29-8d7b-5e9a12f4c607}` зашиты в
-  код. Соберите или принесите её с другой машины и выполните `killswitch.exe uninstall` от администратора. Увидеть наши
-  фильтры: `netsh wfp show filters` (файл filters.xml, provider с этим GUID) и `netsh wfp show boottimepolicy`.
+  код. Соберите или принесите её с другой машины и выполните `.\killswitch.exe uninstall` от администратора. Сборка
+  до v0.2.0 службу не трогает: сначала `sc.exe stop killswitch` и дождитесь `STOPPED` в `sc.exe query killswitch`,
+  затем `uninstall`, затем `sc.exe delete killswitch`. Увидеть наши фильтры: `netsh wfp show filters` (файл filters.xml, provider с этим GUID) и `netsh wfp show boottimepolicy`.
 
 После `uninstall` на Linux и macOS остаётся пустой файл `state.lock` — его можно удалить.
 
@@ -698,7 +784,8 @@ sing-box. Поэтому прогоны CI проверяют backend ОС, но
    умолчанию: `Set-NetFirewallProfile -All -DefaultOutboundAction NotConfigured`. Проверьте, что исходящих
    блокирующих правил старого скрипта не осталось.
 4. Убедитесь, что сеть работает без киллсвитча.
-5. Установите killswitch через `menu.ps1`, клиент туннеля всё ещё остановлен (почему — в разделе «Установка»).
+5. Установите killswitch двойным кликом по `killswitch-windows-amd64.exe`, клиент туннеля всё ещё остановлен
+   (почему — в разделе [Windows](#windows)).
 6. Задайте настройки, включите защиту, запустите клиент. Проверьте `status`, затем `check`.
 7. Перезагрузитесь и проверьте ещё раз: холодная загрузка вживую не проверялась.
 
@@ -713,7 +800,92 @@ killswitch is a tunnel kill switch. While it is on, programs reach the network o
 drops, there is no way around it. One Go binary for Windows (WFP), macOS (pf) and Linux (nftables). One policy for all
 three OSes; tunnel clients are data profiles (`profiles/*.toml`).
 
-Prebuilt binaries, `menu.ps1` and `SHA256SUMS` are on the [Releases](https://github.com/DuchitskyDA/killswitch/releases) page. Or build from source with Go 1.26+:
+Releases (from v0.2.0) on the [Releases](https://github.com/DuchitskyDA/killswitch/releases) page contain five
+binaries `killswitch-<os>-<arch>`, `killswitch-darwin-arm64.zip` and `killswitch-darwin-amd64.zip` with
+`killswitch.app`, and `SHA256SUMS`. The same files are in the `killswitch-<commit>` artifact of every run of the `ci`
+workflow.
+
+Before enabling protection, make sure a profile or `[[trust]]` trusts your tunnel client; otherwise the client cannot
+reach its server and there is no network at all.
+
+### Install on Windows
+
+Stop the tunnel client (see below) and double-click `killswitch-windows-amd64.exe`. The file is unsigned: SmartScreen
+warns once ("Windows protected your PC" → "More info" → "Run anyway"), then UAC asks for administrator rights. The
+installer:
+
+1. creates `%ProgramFiles%\killswitch` and `%ProgramData%\killswitch` (state.json, config.toml) with exact permissions:
+   owner Administrators, write access only for Administrators and SYSTEM, Users read and execute; existing entries are
+   dropped, a new directory is created with these permissions right away. If a directory already exists and is
+   writable by a non-administrator, owned by anyone other than Administrators, SYSTEM or TrustedInstaller, or is a
+   link, installation stops with
+   "небезопасный каталог" (unsafe directory): a regular user could have planted its contents. Inspect and delete it,
+   then run the installer again;
+2. copies itself to `%ProgramFiles%\killswitch\killswitch.exe` (the downloaded file name does not matter);
+3. on the first installation, if `%ProgramData%\killswitch\config.toml` already exists (e.g. left after uninstalling),
+   turns protection on;
+4. registers and starts the `killswitch` service (`killswitch.exe enforce`, automatic start, restart after 5 seconds
+   on failure);
+5. puts a `killswitch` shortcut on the public desktop that opens the window as administrator;
+6. adds killswitch to Settings → Apps;
+7. opens the window.
+
+Without config.toml protection stays off: set and save the settings in the window, then turn protection on. If
+installation fails, an error dialog shows the reason. The same without the window, from PowerShell as administrator:
+
+```powershell
+.\killswitch-windows-amd64.exe install                         # install
+.\killswitch-windows-amd64.exe -config .\config.toml install   # install with settings
+& "$env:ProgramFiles\killswitch\killswitch.exe" status         # commands of the installed program
+```
+
+With `-config`, on the first installation the file becomes the service's config.toml and protection turns on. The
+program is not on `PATH`: call it by full path, as in the last line.
+
+Why the tunnel client must be stopped: WFP does not keep two sublayers with weight 0xFFFF; the one created later gets
+0xFFFE. killswitch creates its sublayer the first time rules are applied (`on`, `off` or `repair`) and keeps it until
+`uninstall`. If the client (e.g. sing-box with `strict_route`) holds its own 0xFFFF sublayer at that moment, ours stays
+below, the client's permit rule overrides our block, and `status`/`check` report `LEAK wfp-tie`. The first apply
+happens during installation if config.toml already exists, otherwise on the first button press in the window. Start the
+client after it; if it is too late, uninstall and install again with the client stopped. `killswitch on` without
+installation also adds persistent filters, but there is no service to recompute them when the tunnel adapter is
+recreated.
+
+### Install on macOS
+
+```sh
+brew install --cask duchitskyda/tap/killswitch
+```
+
+The cask installs `killswitch.app` into Applications and removes its quarantine flag: the app is not signed by Apple,
+so macOS would refuse to open it otherwise. Open killswitch from Applications or Launchpad: a system dialog asks for an
+administrator password (Touch ID is not offered for unsigned apps), then the window opens in the default browser. There
+is no Dock icon. If the window does not open, run
+`sudo /Applications/killswitch.app/Contents/MacOS/killswitch window` in Terminal: errors of a Finder launch are not
+shown. The same path runs the menu (no command) and other commands. The first `on` copies the binary and `pfctl` (as
+`killswitchd`) to `/Library/Application Support/killswitch/` and installs the LaunchDaemon
+`io.github.duchitskyda.killswitch` (log: `/var/log/killswitch.log`).
+
+Without Homebrew: unzip `killswitch-darwin-<arch>.zip`, move `killswitch.app` to Applications and run
+`xattr -dr com.apple.quarantine /Applications/killswitch.app`. Or the bare binary, without `.app`:
+`sudo install -m 0755 killswitch-darwin-arm64 /usr/local/bin/killswitch` (Intel: `killswitch-darwin-amd64`), then
+`sudo killswitch` (menu) or `sudo killswitch window`.
+
+### Install on Linux
+
+`sudo install -m 0755 killswitch-linux-amd64 /usr/local/bin/killswitch` (arm64: `killswitch-linux-arm64`), then `sudo killswitch` opens a terminal menu:
+Settings → Apply and save → Enable protection. The first `on` installs the systemd units. `sudo killswitch window` opens
+the same actions in a window.
+
+### Verify the download (SHA256SUMS)
+
+- Windows (PowerShell): `(Get-FileHash .\killswitch-windows-amd64.exe -Algorithm SHA256).Hash` must match the line
+  for this file in `SHA256SUMS` (case-insensitive);
+- macOS: `shasum -a 256 killswitch-darwin-arm64.zip` (Intel: `killswitch-darwin-amd64.zip`; bare binary:
+  `killswitch-darwin-<arch>`) must match its line. Homebrew checks the zip against the sum in the cask itself;
+- Linux: `sha256sum -c --ignore-missing SHA256SUMS`.
+
+Build from source with Go 1.26+:
 
 ```sh
 git clone https://github.com/DuchitskyDA/killswitch
@@ -721,20 +893,38 @@ cd killswitch
 go build -o killswitch ./cmd/killswitch
 ```
 
-Alternatively, download the `killswitch-<commit>` artifact from a run of the `ci` workflow. It has five binaries,
-`menu.ps1` and `SHA256SUMS`.
+### Update and uninstall
 
-- Linux and macOS: `sudo killswitch` opens a terminal menu. Settings → Apply and save → Enable protection. The first
-  `on` installs the systemd units or the LaunchDaemon. `sudo killswitch window` opens the same actions in a window.
-- Windows: put `killswitch.exe` next to `dist/windows/menu.ps1`, stop the tunnel client, run
-  `powershell -ExecutionPolicy Bypass -File .\menu.ps1`. It installs to `%ProgramFiles%\killswitch`, registers the
-  `killswitch` service and creates an elevated desktop shortcut that opens the window.
+Updating does not change the protection mode.
+
+- Windows: run the new `killswitch-windows-amd64.exe` (double-click, or `install` from an administrator console). It
+  replaces the copy in `%ProgramFiles%\killswitch` and updates the service, shortcut and Apps entry; an open window
+  does not get in the way.
+- macOS: `brew upgrade --cask killswitch`.
+
+Uninstall:
+
+- Windows: Settings → Apps → Installed apps → killswitch → Uninstall, or in PowerShell
+  `& "$env:ProgramFiles\killswitch\killswitch.exe" uninstall`. It removes the service, rules, shortcut, Apps entry and
+  `%ProgramFiles%\killswitch`. Settings in `%ProgramData%\killswitch` are kept, so the next installation turns
+  protection on with them; delete the directory if you do not need them. Uninstalling from Apps shows no errors: if the
+  entry is still there, run the command from an administrator console to see the reason. If the service does not stop,
+  the rules stay: run `sc.exe stop killswitch`, wait for `STOPPED` in `sc.exe query killswitch`, then
+  `sc.exe delete killswitch` and `uninstall` again.
+- macOS: `brew uninstall --cask killswitch` removes the LaunchDaemon, the pf anchor, tokens and the program copy;
+  config.toml stays, and the next installation does not turn protection on by itself. `--zap` also deletes
+  `/Library/Application Support/killswitch` and `/var/log/killswitch.log`. Without Homebrew:
+  `sudo /Applications/killswitch.app/Contents/MacOS/killswitch uninstall` (or `sudo killswitch uninstall` for the bare
+  binary), then delete `killswitch.app` or `/usr/local/bin/killswitch`.
+- Linux: `sudo killswitch uninstall`, then delete `/usr/local/bin/killswitch`.
+
+### Reference
 
 The window (`killswitch window`) is a page embedded in the binary and served from `127.0.0.1` on a random port. It is
 opened with a one-time key and closes together with the browser window.
 
 Commands: `killswitch [-config path] on | off | repair | status | check | detect | window | plan [mode] | enforce |
-uninstall`.
+install | uninstall`.
 Exit codes: 0 ok, 2 config error, 3 apply/backend error, 4 leak, 5 inconclusive (`check`). `off` and `repair`
 (Windows only) last until reboot; `uninstall` removes everything without config or network. Without `[check] targets`,
 `check` runs a simple TCP-only test against `example.com`; `[repair] names` lists programs to block by name.
