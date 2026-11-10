@@ -75,9 +75,14 @@ macOS — LaunchDaemon. Он пересчитывает правила раз в
 ## Установка
 
 **Готовые сборки.** На странице [Releases](https://github.com/DuchitskyDA/killswitch/releases) у каждого выпуска лежат пять бинарников, `menu.ps1` и
-`SHA256SUMS`. Скачайте файл своей ОС — `killswitch-<ос>-<арх>` — и сверьте суммы: `sha256sum -c SHA256SUMS`
-(по файлам, которые скачали: `sha256sum -c --ignore-missing SHA256SUMS`). Перед установкой переименуйте файл в
-`killswitch` (`killswitch.exe`).
+`SHA256SUMS`. Скачайте файл своей ОС — `killswitch-<ос>-<арх>` — и `SHA256SUMS`, сверьте сумму:
+
+- Linux: `sha256sum -c --ignore-missing SHA256SUMS`;
+- macOS: `shasum -a 256 killswitch-darwin-arm64` — строка должна совпасть со строкой этого файла в `SHA256SUMS`;
+- Windows (PowerShell): `(Get-FileHash .\killswitch-windows-amd64.exe -Algorithm SHA256).Hash` — значение должно
+  совпасть без учёта регистра с суммой этого файла в `SHA256SUMS`; так же сверьте `menu.ps1`.
+
+Перед установкой переименуйте файл в `killswitch` (`killswitch.exe`).
 
 **Сборка из исходников.** Нужен Go 1.26 или новее:
 
@@ -91,9 +96,8 @@ go build -o killswitch ./cmd/killswitch        # на Windows: -o killswitch.exe
 Поддержаны linux/amd64, linux/arm64, darwin/arm64, darwin/amd64 и windows/amd64.
 
 **Артефакты CI.** Сборку любого коммита можно взять из CI: каждый прогон workflow `ci` собирает те же пять бинарников, `menu.ps1` и `SHA256SUMS`. Они лежат в артефакте
-`killswitch-<коммит>` на странице прогона во вкладке Actions (скачать может только вошедший в GitHub). Сверьте суммы:
-`sha256sum -c SHA256SUMS`. Файлы называются `killswitch-<ос>-<арх>`. Перед установкой переименуйте свой в
-`killswitch` (`killswitch.exe`).
+`killswitch-<коммит>` на странице прогона во вкладке Actions (скачать может только вошедший в GitHub). Суммы сверяются
+так же, как у готовых сборок.
 
 Защиту включает `on`: из окна, из меню («Включить защиту») или командой. Перед этим проверьте, что профиль или
 `[[trust]]` доверяет клиенту туннеля. Иначе клиент не дойдёт до своего сервера, и выхода в сеть не будет совсем.
