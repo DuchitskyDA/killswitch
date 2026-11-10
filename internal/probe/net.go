@@ -20,10 +20,15 @@ type NetProber struct {
 	Timeout time.Duration
 }
 
-// Tunnel — baseline через туннельный интерфейс.
+// Tunnel — baseline сокетом, привязанным к туннельному интерфейсу.
 func (n NetProber) Tunnel(ctx context.Context, s Service, dst netip.Addr, tun env.Iface) error {
 	d := net.Dialer{Control: n.Bind(tun)}
 	return n.exchange(ctx, &d, s, dst)
+}
+
+// Route — baseline по маршруту через туннель tun, без привязки; источник не из tun — провал (health.RouteDialer).
+func (n NetProber) Route(ctx context.Context, s Service, dst netip.Addr, tun env.Iface) error {
+	return n.exchange(ctx, health.RouteDialer{Tun: tun}, s, dst)
 }
 
 // Direct — проба через физический интерфейс с портом-источником id.Src.
@@ -44,7 +49,7 @@ func (n NetProber) Direct(ctx context.Context, s Service, id ProbeID, iface env.
 	return err == nil, nil
 }
 
-func (n NetProber) exchange(ctx context.Context, d *net.Dialer, s Service, dst netip.Addr) error {
+func (n NetProber) exchange(ctx context.Context, d health.Dialer, s Service, dst netip.Addr) error {
 	ctx, cancel := context.WithTimeout(ctx, n.Timeout)
 	defer cancel()
 	addr := netip.AddrPortFrom(dst, s.Port)

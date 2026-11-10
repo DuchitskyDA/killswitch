@@ -41,9 +41,17 @@ type harness struct {
 	locks  int // захваты общего замка
 }
 
-type fakeProber struct{ answered bool }
+type fakeProber struct {
+	answered bool
+	routed   int // baseline по маршруту (Route)
+}
 
 func (f *fakeProber) Tunnel(context.Context, probe.Service, netip.Addr, env.Iface) error { return nil }
+
+func (f *fakeProber) Route(context.Context, probe.Service, netip.Addr, env.Iface) error {
+	f.routed++
+	return nil
+}
 
 func (f *fakeProber) Direct(context.Context, probe.Service, probe.ProbeID, env.Iface) (bool, error) {
 	return f.answered, nil
@@ -56,7 +64,7 @@ func newHarness(t *testing.T, config string) *harness {
 		OS: "windows", BootID: "boot-1",
 		Ifaces: []env.Iface{
 			{Name: "wg-example", Index: 7, Up: true},
-			{Name: "Ethernet", Index: 2, Up: true, Physical: true, Addrs: []netip.Prefix{netip.MustParsePrefix("192.0.2.10/24")}},
+			{Name: "Ethernet", Index: 2, Up: true, Physical: true, DefaultRoute4: true, Addrs: []netip.Prefix{netip.MustParsePrefix("192.0.2.10/24")}},
 		},
 		Programs: map[string][]string{wireguardExe: {wireguardExe}},
 	}}

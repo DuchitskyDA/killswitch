@@ -20,6 +20,8 @@ type fakeSys struct {
 	table    *string
 	failLoad bool
 	counters map[uint16]uint64
+	egress   map[uint16]uint64
+	loads    int // загрузок таблицы: handle таблицы в ядре растёт с каждым пересозданием
 	calls    []string
 }
 
@@ -35,6 +37,7 @@ func (f *fakeSys) run(stdin, name string, args ...string) (string, error) {
 		if f.failLoad {
 			return "", errors.New("Error: syntax error")
 		}
+		f.loads++
 		lines := strings.SplitN(stdin, "\n", 3)
 		listing := lines[len(lines)-1]
 		f.table = &listing
@@ -48,17 +51,31 @@ func (f *fakeSys) run(stdin, name string, args ...string) (string, error) {
 			return "table inet filter\ntable inet killswitch\n", nil
 		}
 		return "table inet filter\n", nil
+	case cmd == "nft -j list tables":
+		if f.table == nil {
+			return `{"nftables":[{"metainfo":{}}]}`, nil
+		}
+		return fmt.Sprintf(`{"nftables":[{"metainfo":{}},{"table":{"family":"inet","name":"killswitch","handle":%d}}]}`, f.loads), nil
 	case cmd == "nft delete table inet killswitch":
 		f.table = nil
 	case cmd == "nft -j list chain inet killswitch deny":
 		if f.table == nil || !strings.Contains(*f.table, "chain deny") {
 			return "", errors.New("Error: No such file or directory")
 		}
-		var rules []string
+		rules := []string{`{"metainfo":{}}`}
 		for port, n := range f.counters {
 			rules = append(rules, fmt.Sprintf(`{"rule":{"chain":"deny","comment":"probe %d","expr":[{"counter":{"packets":%d,"bytes":0}},{"drop":null}]}}`, port, n))
 		}
-		return `{"nftables":[{"metainfo":{}},` + strings.Join(rules, ",") + `]}`, nil
+		return `{"nftables":[` + strings.Join(rules, ",") + `]}`, nil
+	case cmd == "nft -j list chain inet killswitch egress":
+		if f.table == nil || !strings.Contains(*f.table, "chain egress") {
+			return "", errors.New("Error: No such file or directory")
+		}
+		rules := []string{`{"metainfo":{}}`}
+		for port, n := range f.egress {
+			rules = append(rules, fmt.Sprintf(`{"rule":{"chain":"egress","comment":"egress %d","expr":[{"counter":{"packets":%d,"bytes":0}}]}}`, port, n))
+		}
+		return `{"nftables":[` + strings.Join(rules, ",") + `]}`, nil
 	case strings.HasPrefix(cmd, "systemctl enable "):
 		for _, u := range units {
 			link := filepath.Join(f.root, filepath.FromSlash(u.wants))
@@ -89,7 +106,7 @@ func newTestBackend(t *testing.T) (*Backend, *fakeSys) {
 	if err := os.WriteFile(self, []byte("binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	f := &fakeSys{root: root, counters: map[uint16]uint64{}}
+	f := &fakeSys{root: root, counters: map[uint16]uint64{}, egress: map[uint16]uint64{}}
 	b := newBackend(root, f.run, func() (string, error) { return self, nil }, func() bool { return true })
 	return b, f
 }
@@ -402,5 +419,64 @@ func TestApplyOnLateFailureKeepsFullSet(t *testing.T) {
 	}
 	if f.table == nil || !strings.Contains(*f.table, "cgroupv2") {
 		t.Fatal("после поздней ошибки on полный набор заменён урезанным")
+	}
+}
+
+// egressed — проба с ответом: был ли рост счётчика выхода порта между BeforeProbe и Egressed.
+func egressed(t *testing.T, m policy.Mode, before, after uint64) (bool, error) {
+	t.Helper()
+	b, f := newTestBackend(t)
+	if err := b.Apply(plan(t, m)); err != nil {
+		t.Fatal(err)
+	}
+	id := probeID(30010)
+	f.counters[30010] = 0
+	f.egress[30010] = before
+	if err := b.BeforeProbe(id); err != nil {
+		t.Fatal(err)
+	}
+	f.egress[30010] = after
+	return b.Egressed(id)
+}
+
+func TestEgressedWhenCounterGrew(t *testing.T) {
+	if sent, err := egressed(t, policy.ModeOn, 1, 2); err != nil || !sent {
+		t.Fatalf("Egressed = %v, %v; ждали «ушёл»", sent, err)
+	}
+}
+
+// Счётчик выхода не вырос — доказано, что проба через физику не уходила (перехвачена клиентом туннеля).
+func TestNotEgressedWhenCounterSame(t *testing.T) {
+	if sent, err := egressed(t, policy.ModeOn, 2, 2); err != nil || sent {
+		t.Fatalf("Egressed = %v, %v; ждали «не ушёл»", sent, err)
+	}
+}
+
+// Нет цепочки egress (off, таблица снята, старый набор) — признака нет: ядро назовёт ответ утечкой.
+func TestEgressUnknownWithoutEgressChain(t *testing.T) {
+	if _, err := egressed(t, policy.ModeOff, 2, 2); err == nil {
+		t.Fatal("в off признак выхода есть; ждали ошибку")
+	}
+}
+
+// Счётчик сброшен между снимками (таблицу пересоздали) — «не ушёл» не доказано.
+func TestEgressUnknownAfterCounterReset(t *testing.T) {
+	if _, err := egressed(t, policy.ModeOn, 3, 0); err == nil {
+		t.Fatal("после сброса счётчика признак есть; ждали ошибку")
+	}
+}
+
+// Таблицу пересоздали между снимками (снята и возвращена, счётчик снова с нуля) — «не ушёл» не доказано.
+func TestEgressUnknownWhenTableReloaded(t *testing.T) {
+	b, f := newTestBackend(t)
+	b.Apply(plan(t, policy.ModeOn))
+	id := probeID(30011)
+	f.counters[30011], f.egress[30011] = 0, 0
+	if err := b.BeforeProbe(id); err != nil {
+		t.Fatal(err)
+	}
+	b.Apply(plan(t, policy.ModeOn))
+	if sent, err := b.Egressed(id); err == nil {
+		t.Fatalf("Egressed после пересоздания = %v, nil; ждали ошибку", sent)
 	}
 }

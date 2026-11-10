@@ -28,6 +28,7 @@ func (b *Backend) Snapshot(p policy.Policy) (env.Env, error) {
 	if e.Ifaces, err = b.interfaces(); err != nil {
 		return env.Env{}, err
 	}
+	b.markDefaultRoutes(e.Ifaces)
 	for _, t := range p.Trust {
 		b.snapshotTrust(&e, t)
 	}
@@ -115,15 +116,9 @@ func resolveEndpoints(e *env.Env, eps []policy.Endpoint) {
 	}
 }
 
-// snapshotRoutes — эффективные маршруты к адресам endpoints и dns.health (`route -n get`).
+// snapshotRoutes — эффективные маршруты к целям check, адресам endpoints и dns.health (`route -n get`).
 func (b *Backend) snapshotRoutes(e *env.Env, p policy.Policy) {
-	var targets []netip.Addr
-	for _, ep := range p.Tunnel.Endpoints {
-		targets = append(targets, endpointAddrs(ep, *e)...)
-	}
-	if p.Health != nil {
-		targets = append(targets, p.Health.Addr.Addr())
-	}
+	targets := routeTargets(p, *e)
 	tunnel := map[string]bool{}
 	for _, i := range e.MatchIfaces(p.Tunnel.Interfaces) {
 		tunnel[i.Name] = true
@@ -145,6 +140,19 @@ func (b *Backend) snapshotRoutes(e *env.Env, p policy.Policy) {
 			e.Routes[a] = env.Route{IfaceIndex: index[name], ViaTunnel: tunnel[name]}
 		}
 	}
+}
+
+// routeTargets — адреса, к которым Snapshot ищет эффективный маршрут: цели check (baseline по маршруту через
+// туннель), адреса endpoints и dns.health.
+func routeTargets(p policy.Policy, e env.Env) []netip.Addr {
+	targets := append([]netip.Addr(nil), p.Check.Targets...)
+	for _, ep := range p.Tunnel.Endpoints {
+		targets = append(targets, endpointAddrs(ep, e)...)
+	}
+	if p.Health != nil {
+		targets = append(targets, p.Health.Addr.Addr())
+	}
+	return targets
 }
 
 func physicalNames(ifs []env.Iface) map[string]bool {
@@ -216,4 +224,39 @@ func scopedResolvers(out string, physical map[string]bool) []netip.Addr {
 	}
 	flush(servers, iface)
 	return sortedAddrs(found)
+}
+
+// markDefaultRoutes — есть ли у интерфейса маршрут по умолчанию v4/v6 (строки default `netstat -rn -f inet|inet6`,
+// включая scoped; reject R и blackhole B — нет). Таблицу не прочитать — маршрут считается у каждого: пробы check
+// идут, как раньше.
+func (b *Backend) markDefaultRoutes(ifaces []env.Iface) {
+	for _, v4 := range []bool{true, false} {
+		fam := "inet6"
+		if v4 {
+			fam = "inet"
+		}
+		res, err := b.run.Run("", "/usr/sbin/netstat", "-rn", "-f", fam)
+		devs := defaultRouteIfaces(res.Out)
+		for k := range ifaces {
+			has := err != nil || devs[ifaces[k].Name]
+			if v4 {
+				ifaces[k].DefaultRoute4 = has
+			} else {
+				ifaces[k].DefaultRoute6 = has
+			}
+		}
+	}
+}
+
+// defaultRouteIfaces: `netstat -rn` → интерфейсы строк default (Destination Gateway Flags Netif …).
+func defaultRouteIfaces(out string) map[string]bool {
+	devs := map[string]bool{}
+	for _, l := range lines(out) {
+		f := strings.Fields(l)
+		if len(f) < 4 || f[0] != "default" || strings.ContainsAny(f[2], "RB") {
+			continue
+		}
+		devs[f[3]] = true
+	}
+	return devs
 }

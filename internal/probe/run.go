@@ -26,8 +26,12 @@ var Services = []Service{
 
 // Prober шлёт пробы. Реализация — NetProber; в тестах — фейк.
 type Prober interface {
-	// Tunnel: цель отвечает через туннельный сокет (baseline при включённой защите).
+	// Tunnel: цель отвечает через сокет, привязанный к туннелю (baseline при включённой защите).
 	Tunnel(ctx context.Context, s Service, dst netip.Addr, tun env.Iface) error
+	// Route: цель отвечает через сокет без привязки, по эффективному маршруту через туннель tun; соединение с
+	// адресом-источником не из tun — провал. Нужен, когда клиент туннеля перенаправляет трафик (sing-box
+	// auto_redirect) и привязка к TUN ломает обмен.
+	Route(ctx context.Context, s Service, dst netip.Addr, tun env.Iface) error
 	// Direct: проба через физический интерфейс с портом-источником id.Src; answered — пришёл ответ сервера.
 	// err — только сбой подготовки (привязка, порт занят), не отсутствие ответа.
 	Direct(ctx context.Context, s Service, id ProbeID, iface env.Iface) (answered bool, err error)
@@ -51,11 +55,18 @@ type Finisher interface {
 	AfterProbe(id ProbeID)
 }
 
+// Egress — необязательно у EvidenceSource: ушёл ли пакет пробы через физический интерфейс.
+// sent=false без ошибки — доказано, что не ушёл (клиент туннеля перехватил пробу); ошибка — признака нет.
+type Egress interface {
+	Egressed(id ProbeID) (sent bool, err error)
+}
+
 // Input — что проверять.
 type Input struct {
 	Targets    []netip.Addr
-	Tunnels    []env.Iface // совпавшие и поднятые туннельные интерфейсы
-	Physical   []env.Iface // поднятые физические интерфейсы
+	Tunnels    []env.Iface              // совпавшие и поднятые туннельные интерфейсы
+	Physical   []env.Iface              // поднятые физические интерфейсы
+	Routes     map[netip.Addr]env.Route // эффективные маршруты к целям (Env.Routes)
 	Structural []StructuralFinding
 }
 
@@ -66,6 +77,10 @@ func Run(ctx context.Context, in Input, p Prober, ev EvidenceSource, now func() 
 	if len(in.Targets) == 0 {
 		probes = append(probes, ProbeResult{Target: "-", Class: Inconclusive,
 			Detail: "check.targets пуст: задайте цели со слушающими HTTP 80, UDP-эхо 443 и DNS 53"})
+	}
+	if !anyDefaultRoute(in.Physical) {
+		probes = append(probes, ProbeResult{Target: "-", Class: Inconclusive,
+			Detail: "ни у одного поднятого физического интерфейса нет маршрута по умолчанию: путь в интернет мимо туннеля не найден, проверять нечего"})
 	}
 	for _, dst := range in.Targets {
 		for _, s := range Services {
@@ -85,13 +100,7 @@ type runner struct {
 
 func (r *runner) target(in Input, s Service, dst netip.Addr) []ProbeResult {
 	fam := family(dst)
-	baseline := "туннель не поднят"
-	if len(in.Tunnels) > 0 {
-		baseline = ""
-		if err := r.p.Tunnel(r.ctx, s, dst, in.Tunnels[0]); err != nil {
-			baseline = "цель не ответила через туннель: " + err.Error()
-		}
-	}
+	baseline := r.baseline(in, s, dst)
 	var out []ProbeResult
 	for _, phys := range in.Physical {
 		res := ProbeResult{Target: netip.AddrPortFrom(dst, s.Port).String(), Family: fam, Proto: s.Name, Iface: phys.Name}
@@ -105,6 +114,9 @@ func (r *runner) direct(s Service, dst netip.Addr, phys env.Iface, baseline stri
 	src, ok := phys.SourceAddr(dst.Is4())
 	if !ok {
 		return Skipped, "нет адреса " + family(dst) + " на интерфейсе"
+	}
+	if !phys.DefaultRoute(dst.Is4()) {
+		return Skipped, "нет маршрута по умолчанию " + family(dst) + " через интерфейс"
 	}
 	if baseline != "" {
 		return Inconclusive, baseline
@@ -124,7 +136,7 @@ func (r *runner) direct(s Service, dst netip.Addr, phys env.Iface, baseline stri
 		return Inconclusive, "проба не отправлена: " + err.Error()
 	}
 	if answered {
-		return Leak, "сервер ответил мимо туннеля"
+		return r.answered(id)
 	}
 	dropped, err := r.ev.Evidence(id, id.At)
 	if err != nil {
@@ -134,6 +146,58 @@ func (r *runner) direct(s Service, dst netip.Addr, phys env.Iface, baseline stri
 		return Inconclusive, "ответа нет, но и отброса нашим правилом не видно"
 	}
 	return Blocked, fmt.Sprintf("отброшено нашим правилом (порт-источник %d)", id.Src.Port())
+}
+
+// baseline — цель жива через туннель: по маршруту, если эффективный маршрут к ней идёт через поднятый туннель
+// (перенаправление клиента ломает привязку к TUN), иначе сокетом, привязанным к туннелю. Пустая строка — жива.
+func (r *runner) baseline(in Input, s Service, dst netip.Addr) string {
+	if len(in.Tunnels) == 0 {
+		return "туннель не поднят"
+	}
+	var err error
+	if tun, ok := routedTunnel(in, dst); ok {
+		err = r.p.Route(r.ctx, s, dst, tun)
+	} else {
+		err = r.p.Tunnel(r.ctx, s, dst, in.Tunnels[0])
+	}
+	if err != nil {
+		return "цель не ответила через туннель: " + err.Error()
+	}
+	return ""
+}
+
+func routedTunnel(in Input, dst netip.Addr) (env.Iface, bool) {
+	route, ok := in.Routes[dst]
+	if !ok || !route.ViaTunnel {
+		return env.Iface{}, false
+	}
+	for _, t := range in.Tunnels {
+		if t.Index == route.IfaceIndex {
+			return t, true
+		}
+	}
+	return env.Iface{}, false
+}
+
+// answered — сервер ответил на прямую пробу. Утечка, кроме случая, когда backend доказал, что пакет пробы через
+// физический интерфейс не уходил: клиент туннеля перехватил пробу и ответ пришёл через туннель — тогда пропуск с
+// пометкой (решение владельца), итог — по остальным пробам. Признака нет или он не прочитан — утечка, как раньше.
+func (r *runner) answered(id ProbeID) (Class, string) {
+	if eg, ok := r.ev.(Egress); ok {
+		if sent, err := eg.Egressed(id); err == nil && !sent {
+			return Skipped, "перехвачено клиентом туннеля, через физический адаптер не ушло"
+		}
+	}
+	return Leak, "сервер ответил мимо туннеля"
+}
+
+func anyDefaultRoute(ifaces []env.Iface) bool {
+	for _, i := range ifaces {
+		if i.DefaultRoute4 || i.DefaultRoute6 {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *runner) nextPort() uint16 {

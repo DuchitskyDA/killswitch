@@ -976,12 +976,17 @@ func (a *acc) s3open() error {
 
 func (a *acc) s9() error {
 	out, code := a.ks("check")
-	ok := code == 0
-	a.expect("9", "-", "check под on", ok, fmt.Sprintf("код %d", code))
 	if a.c.Redirect {
-		a.add("(б)", "-", "check при auto_redirect", map[bool]Status{true: Pass, false: Fail}[ok],
-			fmt.Sprintf("код %d; %s", code, strings.Join(grepLines(out, "LEAK|INCONCLUSIVE|итог"), " | ")))
+		// При перенаправлении клиента (решения владельца по ks-probe): 0 или 5 по правилам, но не ложный LEAK.
+		ok := RedirectCheckOK(out, code)
+		detail := fmt.Sprintf("код %d; %s", code, strings.Join(grepLines(out, "LEAK|INCONCLUSIVE|SKIPPED c0|итог"), " | "))
+		a.expect("9", "-", "check под on при auto_redirect: 0 или 5, без ложного LEAK", ok, detail)
+		a.redirectDiag()
+		a.add("(б)", "-", "check при auto_redirect: 0 или 5, без ложного LEAK", map[bool]Status{true: Pass, false: Fail}[ok], detail)
+	} else {
+		a.expect("9", "-", "check под on", code == 0, fmt.Sprintf("код %d", code))
 	}
+	a.noDefaultRoute(code)
 	if _, err := a.ns[topo.ClientNS].Run(a.ctx, "nft", "delete", "table", "inet", "killswitch"); err != nil {
 		return err
 	}
@@ -998,6 +1003,60 @@ func (a *acc) s9() error {
 	a.stopEnforce()
 	a.blocked("10", shortProbes[0], a.direct(), "после enforce прямая")
 	return nil
+}
+
+// redirectDiag — (б): как клиент ведёт трафик check (root): маршрут к цели, таблица sing-box, TCP от root по маршруту.
+func (a *acc) redirectDiag() {
+	cl := a.ns[topo.ClientNS]
+	for _, dst := range []netip.Addr{topo.InetV4, topo.InetV6} {
+		out, _ := cl.Run(a.ctx, "ip", "-j", "route", "get", dst.String())
+		a.printf("  ip route get %s: %s\n", dst, strings.TrimSpace(out))
+	}
+	a.printf("  nft inet sing-box:\n%s", indent(a.clientNFT("list", "table", "inet", "sing-box")))
+	for _, p := range []Probe{ServiceProbes[0], ServiceProbes[1]} {
+		r := a.runProbeOpts(p, popts{})
+		a.printf("  root по маршруту %s: ok=%t echo=%s err=%s\n", p.Name, r.OK, r.Echo, r.Err)
+	}
+	// Признак (б2) живьём: TCP от root с портом пробы — без привязки и с привязкой к c0. Ответ при неизменном
+	// счётчике egress — перехват клиентом (пакет через физику не уходил); рост — пакет ушёл на c0.
+	for _, o := range []popts{{sport: 30063}, {sport: 30062, bind: topo.PhysIf}} {
+		before := a.egressCount(o.sport)
+		r := a.runProbeOpts(ServiceProbes[0], o)
+		a.printf("  root sport %d bind=%q tcp4/80: ok=%t echo=%s err=%s; egress %d → %d\n", o.sport, o.bind, r.OK, r.Echo, r.Err,
+			before, a.egressCount(o.sport))
+	}
+}
+
+// egressCount — счётчик правила "egress <порт>" таблицы клиента (-1 — правила нет).
+func (a *acc) egressCount(port uint16) int64 {
+	re := regexp.MustCompile(fmt.Sprintf(`th sport %d counter packets (\d+) bytes \d+ comment "egress %d"`, port, port))
+	m := re.FindStringSubmatch(a.clientNFT("list", "chain", "inet", "killswitch", "egress"))
+	if m == nil {
+		return -1
+	}
+	n, _ := strconv.ParseInt(m[1], 10, 64)
+	return n
+}
+
+// noDefaultRoute — (в) ks-probe: физический интерфейс с адресами, но без маршрута по умолчанию (как vEthernet (nat)
+// или docker0), check пропускает с пометкой; итог не меняется.
+func (a *acc) noDefaultRoute(want int) {
+	cl := a.ns[topo.ClientNS]
+	if err := a.seq(cl,
+		[]string{"ip", "link", "add", "ksv0", "type", "veth", "peer", "name", "ksv1"},
+		[]string{"ip", "addr", "add", "100.64.77.1/24", "dev", "ksv0"},
+		[]string{"ip", "-6", "addr", "add", "fd99::77/64", "dev", "ksv0", "nodad"},
+		[]string{"ip", "link", "set", "ksv1", "up"},
+		[]string{"ip", "link", "set", "ksv0", "up"}); err != nil {
+		a.add(ScenarioNoDefault, "-", "интерфейс без маршрута по умолчанию", Fail, err.Error())
+		return
+	}
+	defer cl.Run(a.ctx, "ip", "link", "del", "ksv0")
+	out, code := a.ks("check")
+	skipped := grepLines(out, "^SKIPPED ksv0 .*нет маршрута по умолчанию")
+	a.expect(ScenarioNoDefault, "-", "интерфейс без маршрута по умолчанию пропущен с пометкой, итог прежний",
+		len(skipped) > 0 && len(grepLines(out, "^(BLOCKED|LEAK|INCONCLUSIVE) ksv0 ")) == 0 && code == want,
+		fmt.Sprintf("код %d (ждали %d); %s", code, want, strings.Join(grepLines(out, "ksv0|итог"), " | ")))
 }
 
 func grepLines(s, re string) []string {
@@ -1180,7 +1239,15 @@ func (a *acc) s3tunnelUp() error {
 		e, _ := a.evidence(dns4, a.direct())
 		return !e.LeakSeen()
 	})
-	a.expect("3", "-", "tunnel-up: здоровье up закрыло DNS к LAN", errUp == nil, fmt.Sprintf("%v за %s", errUp, time.Since(t0).Round(time.Second)))
+	upDetail := fmt.Sprintf("%v за %s", errUp, time.Since(t0).Round(time.Second))
+	if a.c.Redirect && errUp != nil {
+		// Решение владельца «Описать ограничение»: при auto_redirect маршрут к dns.health идёт через физику (перехват —
+		// nft), Gate здоровья не проходит, tunnel-up не поднимается.
+		a.add("3", "-", "tunnel-up: здоровье up закрыло DNS к LAN", NotTested,
+			"ограничение, описано: при sing-box auto_redirect tunnel-up не поднимается; "+upDetail)
+	} else {
+		a.expect("3", "-", "tunnel-up: здоровье up закрыло DNS к LAN", errUp == nil, upDetail)
+	}
 	if errUp == nil {
 		for _, p := range lanProbes[2:] {
 			a.blocked("3", p, a.direct(), "tunnel-up, туннель здоров: DNS к LAN")
@@ -1296,7 +1363,8 @@ func (a *acc) s7() error {
 func (a *acc) strict() error {
 	o := ConfigOpts{Strict: true, CgroupPath: a.cgRel}
 	if a.c.Cgroup {
-		o.ExtraEndpoints = []string{fmt.Sprintf("%s:%d/udp", topo.InetV4, topo.UDPPort)}
+		o.ExtraEndpoints = []string{fmt.Sprintf("%s:%d/udp", topo.InetV4, topo.UDPPort),
+			fmt.Sprintf("[%s]:%d/udp", topo.InetV6, topo.UDPPort), fmt.Sprintf("%s:%d/tcp", topo.InetV4, topo.DNSPort)}
 	}
 	if err := a.writeConfig(o); err != nil {
 		return err
@@ -1340,7 +1408,7 @@ func (a *acc) strict() error {
 		}
 	}
 	if a.c.Cgroup {
-		a.conntrackP1()
+		a.cgroupTrust()
 	}
 	if a.c.Name == "sing-box" {
 		a.directRoute(o)
@@ -1348,42 +1416,66 @@ func (a *acc) strict() error {
 	return nil
 }
 
-// conntrackP1 — вопрос (а): метка cgroup живёт на записи conntrack. Доверенный cgroup шлёт UDP к endpoint (эхо 443),
-// потом чужой процесс с тем же 5-кортежем. Затем — кандидат правки вставкой правил в таблицу внутри ns.
-func (a *acc) conntrackP1() {
-	udp4 := ServiceProbes[2]
-	trusted := popts{bind: topo.PhysIf, sport: 40123, cg: a.cgDir}
-	foreign := popts{bind: topo.PhysIf, sport: 40123, uid: topo.NobodyUID}
-	r := a.runProbeOpts(udp4, trusted)
-	a.expect("(а)", "v4", "доверенный cgroup к endpoint (strict) проходит", r.OK, fmt.Sprintf("ok=%t echo=%s err=%s", r.OK, r.Echo, r.Err))
-	e, _ := a.evidence(udp4, foreign)
-	a.expect("(а)", "v4", "чужой процесс с тем же 5-кортежем UDP до истечения conntrack", !e.LeakSeen(),
-		"прошёл="+strconv.FormatBool(e.LeakSeen())+" "+e.String())
-	a.blocked("(а)", udp4, popts{bind: topo.PhysIf, sport: 40124, uid: topo.NobodyUID}, "контроль: чужой с другим sport")
+// cgroupTrust — (а): метка cgroup живёт на записи conntrack, поэтому backend проверяет в output сокет пакета с меткой
+// (цепочка cgroup_<l1>_<l2>: доверенный cgroup — return, иначе полный сокет — drop "foreign socket"). Доверенный
+// (UDP v4/v6, TCP, вложенный cgroup) проходит и счётчик foreign не трогает; чужой процесс с тем же 5-кортежем UDP
+// до истечения conntrack отброшен.
+func (a *acc) cgroupTrust() {
 	a.printf("  цепочка output:\n%s", indent(a.clientNFT("list", "chain", "inet", "killswitch", "output")))
-	// Кандидат правки (только эксперимент в ns, backend не меняется): пакет с меткой доверенного cgroup и полным сокетом
-	// вне этого cgroup — drop в output; пакет без сокета (TIME_WAIT) проходит, как сейчас.
-	level := strings.Count(a.cgRel, "/") + 1
-	labels := regexp.MustCompile(`ct label set (\d+) ct label set (\d+)`).FindStringSubmatch(a.clientNFT("list", "chain", "inet", "killswitch", "output"))
-	if labels == nil {
-		a.add("(а)", "v4", "кандидат правки", NotTested, "в output нет правила ct label set")
+	before, ok := a.foreignDrops()
+	if !ok {
+		a.add("(а)", "-", "цепочка проверки cgroup есть", Fail, "нет правила \"foreign socket\" в таблице")
 		return
 	}
-	fix := fmt.Sprintf("add chain inet killswitch ksl_fix\n"+
-		"add rule inet killswitch ksl_fix socket cgroupv2 level %d %q return\n"+
-		"add rule inet killswitch ksl_fix meta skuid >= 0 drop\n"+
-		"add rule inet killswitch output ct label %s ct label %s jump ksl_fix\n", level, a.cgRel, labels[1], labels[2])
-	a.printf("  кандидат правки:\n%s", indent(fix))
-	if _, err := a.ns[topo.ClientNS].RunWith(a.ctx, nil, fix, "nft", "-f", "-"); err != nil {
-		a.add("(а)", "v4", "кандидат правки принят nft", Fail, err.Error())
+	udp := []Probe{ServiceProbes[2], ServiceProbes[3]}
+	for i, p := range udp {
+		r := a.runProbeOpts(p, popts{bind: topo.PhysIf, sport: uint16(40123 + i), cg: a.cgDir})
+		a.expect("(а)", famOf(p), "доверенный cgroup к endpoint (strict) проходит", r.OK, fmt.Sprintf("ok=%t echo=%s err=%s", r.OK, r.Echo, r.Err))
+	}
+	r := a.runProbeOpts(ServiceProbes[5], popts{bind: topo.PhysIf, cg: a.cgDir})
+	a.expect("(а)", "v4", "доверенный cgroup, TCP к endpoint проходит (соединение закрыто)", r.OK, fmt.Sprintf("ok=%t err=%s", r.OK, r.Err))
+	a.nestedCgroup(udp[0])
+	after, _ := a.foreignDrops()
+	a.expect("(а)", "-", "доверенный трафик не задел drop \"foreign socket\"", after == before, fmt.Sprintf("счётчик %d → %d", before, after))
+	for i, p := range udp {
+		e, _ := a.evidence(p, popts{bind: topo.PhysIf, sport: uint16(40123 + i), uid: topo.NobodyUID})
+		a.expect("(а)", famOf(p), "чужой процесс с тем же 5-кортежем UDP до истечения conntrack отброшен", !e.LeakSeen(),
+			"прошёл="+strconv.FormatBool(e.LeakSeen())+" "+e.String())
+	}
+	a.blocked("(а)", udp[0], popts{bind: topo.PhysIf, sport: 40126, uid: topo.NobodyUID}, "контроль: чужой с другим sport")
+	final, _ := a.foreignDrops()
+	a.expect("(а)", "-", "чужой отброшен именно проверкой cgroup", final > after, fmt.Sprintf("счётчик %d → %d", after, final))
+}
+
+// nestedCgroup — процесс во вложенном cgroup доверенного (`level N` — предок) проходит.
+func (a *acc) nestedCgroup(p Probe) {
+	path := filepath.Join(a.cgAbs, "nested")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		a.add("(а)", famOf(p), "вложенный cgroup", Fail, err.Error())
 		return
 	}
-	trusted.sport, foreign.sport = 40125, 40125
-	r = a.runProbeOpts(udp4, trusted)
-	a.expect("(а)", "v4", "с правкой: доверенный проходит", r.OK, fmt.Sprintf("ok=%t err=%s", r.OK, r.Err))
-	e, _ = a.evidence(udp4, foreign)
-	a.expect("(а)", "v4", "с правкой: чужой с тем же 5-кортежем отброшен", !e.LeakSeen(), e.String())
-	a.printf("  %s\n", strings.Join(grepLines(a.clientNFT("list", "chain", "inet", "killswitch", "ksl_fix"), "drop|return"), " | "))
+	defer os.Remove(path)
+	dir, err := os.Open(path)
+	if err != nil {
+		a.add("(а)", famOf(p), "вложенный cgroup", Fail, err.Error())
+		return
+	}
+	defer dir.Close()
+	r := a.runProbeOpts(p, popts{bind: topo.PhysIf, sport: 40125, cg: dir})
+	a.expect("(а)", famOf(p), "вложенный cgroup доверенного проходит", r.OK, fmt.Sprintf("ok=%t err=%s", r.OK, r.Err))
+}
+
+var foreignRe = regexp.MustCompile(`counter packets (\d+) bytes \d+ drop comment "foreign socket"`)
+
+// foreignDrops — сумма счётчиков drop "foreign socket" таблицы клиента.
+func (a *acc) foreignDrops() (uint64, bool) {
+	var sum uint64
+	m := foreignRe.FindAllStringSubmatch(a.clientNFT("list", "table", "inet", "killswitch"), -1)
+	for _, g := range m {
+		n, _ := strconv.ParseUint(g[1], 10, 64)
+		sum += n
+	}
+	return sum, len(m) > 0
 }
 
 // directRoute — рев. 6: правило клиента «HTTP «интернета» v4 → direct». compat — проходит мимо туннеля от доверенного

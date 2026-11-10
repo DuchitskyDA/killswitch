@@ -3,6 +3,7 @@ package linux
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -246,4 +247,77 @@ func labelAccepts(script string) []string {
 		}
 	}
 	return out
+}
+
+func cgroupPolicy(paths ...string) (policy.Policy, env.Env) {
+	p := basePolicy()
+	p.Trust = []policy.Trust{{Kind: policy.KindCgroup, Value: "cg*", Destinations: policy.DestAny}}
+	e := baseEnv()
+	e.Programs = map[string][]string{"cg*": paths}
+	return p, e
+}
+
+// (а) Метка живёт на записи conntrack: пакет с меткой проверяется в output на сокет доверенного cgroup;
+// полный сокет вне него отброшен, пакет без полного сокета (TIME_WAIT) идёт дальше по метке. Через lo — без проверки:
+// ответ локального сервиса (резолвер 127.0.0.53, локальный прокси) идёт по той же записи conntrack от чужого сокета.
+func TestCgroupLabelVerifiedAgainstSocket(t *testing.T) {
+	p, e := cgroupPolicy("system.slice/sing-box.service")
+	r, _ := Plan(p, e)
+	l1, l2 := cgroupLabel(selector{match: `socket cgroupv2 level 2 "system.slice/sing-box.service"`, dests: []string{""}})
+	chain := fmt.Sprintf("cgroup_%d_%d", l1, l2)
+	want := fmt.Sprintf("\t\toifname != \"lo\" ct label %d ct label %d jump %s\n", l1, l2, chain) +
+		fmt.Sprintf("\t\tsocket cgroupv2 level 2 \"system.slice/sing-box.service\" ct label set %d ct label set %d\n", l1, l2)
+	if !strings.Contains(r.Load, want) {
+		t.Errorf("в output нет проверки метки перед установкой:\n%s", r.Load)
+	}
+	body := "\tchain " + chain + " {\n\t\tsocket cgroupv2 level 2 \"system.slice/sing-box.service\" return\n" +
+		"\t\tmeta skuid >= 0 counter drop comment \"foreign socket\"\n\t}\n"
+	if !strings.Contains(r.Load, body) {
+		t.Errorf("нет цепочки проверки %s:\n%s", chain, r.Load)
+	}
+}
+
+// Два селектора с одной парой битов делят цепочку проверки: иначе каждая отбросила бы доверенных другого.
+func TestCgroupSelectorsSharingLabelShareChain(t *testing.T) {
+	a, b := collidingPaths(t)
+	p, e := cgroupPolicy(a, b)
+	r, _ := Plan(p, e)
+	if n := strings.Count(r.Load, " jump cgroup_"); n != 1 {
+		t.Fatalf("переходов в цепочку проверки %d, ждали 1:\n%s", n, r.Load)
+	}
+	for _, path := range []string{a, b} {
+		if !strings.Contains(r.Load, fmt.Sprintf("socket cgroupv2 level 1 %q return", path)) {
+			t.Errorf("в общей цепочке нет %s", path)
+		}
+	}
+}
+
+func collidingPaths(t *testing.T) (string, string) {
+	t.Helper()
+	seen := map[[2]int]string{}
+	for i := 0; i < 100000; i++ {
+		path := fmt.Sprintf("cg%d", i)
+		l1, l2 := cgroupLabel(selector{match: fmt.Sprintf("socket cgroupv2 level 1 %q", path), dests: []string{""}})
+		if prev, ok := seen[[2]int{l1, l2}]; ok {
+			return prev, path
+		}
+		seen[[2]int{l1, l2}] = path
+	}
+	t.Fatal("совпадения пары не нашлось")
+	return "", ""
+}
+
+// (б2) Пакет пробы, дошедший до правила проб в postrouting, уходит через физический интерфейс (lo и туннель
+// приняты раньше): счётчик на порт в цепочке egress — признак выхода.
+func TestProbePacketsCountedOnEgress(t *testing.T) {
+	r, _ := Plan(basePolicy(), baseEnv())
+	for _, want := range []string{
+		"meta l4proto { tcp, udp } th sport 30000-30063 goto egress comment \"check probes\"\n",
+		"\t\tmeta l4proto { tcp, udp } th sport 30063 counter comment \"egress 30063\"\n\t\tgoto rest\n\t}\n",
+		"\tchain egress {\n\t\tmeta l4proto { tcp, udp } th sport 30000 counter comment \"egress 30000\"\n",
+	} {
+		if !strings.Contains(r.Load, want) {
+			t.Errorf("нет %q:\n%s", want, r.Load)
+		}
+	}
 }
