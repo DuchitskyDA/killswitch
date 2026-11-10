@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/DuchitskyDA/killswitch/internal/policy"
+	"github.com/DuchitskyDA/killswitch/internal/state"
 )
 
 // setup — запуск с рабочего стола (двойной клик) или killswitch setup: права администратора, установка
@@ -57,8 +58,8 @@ func (a *app) install() error {
 	return nil
 }
 
-// enableIfConfigured — настройки уже есть (прежняя установка или -config): защита включается сразу, тем же
-// путём, что команда on; настроек нет — их задают в окне.
+// enableIfConfigured — настройки уже есть (прежняя установка или -config): режим установки выбирает installMode,
+// тем же путём, что команды on/off/repair; настроек нет — их задают в окне.
 func (a *app) enableIfConfigured() error {
 	if _, err := os.Stat(a.configPath); errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -68,12 +69,32 @@ func (a *app) enableIfConfigured() error {
 		return fail(exitApply, "%v", err)
 	}
 	a.b = b
-	return a.transition(policy.ModeOn)
+	return a.transitionFrom(a.installMode)
+}
+
+// installMode — режим при установке по state.json (под общим замком). Режима нет — первая установка (повреждённый
+// state.json — как его нет): on. Режим записан (обновление, повторный двойной клик) — установка его не меняет;
+// чужой -config принимается тем же режимом, а незавершённый переход — целью его намерения.
+func (a *app) installMode(st state.State) (policy.Mode, bool) {
+	switch {
+	case st.Mode == "":
+		return policy.ModeOn, true
+	case a.ownConfig():
+		return "", false
+	case st.Intent != nil:
+		return st.Intent.Target, true
+	}
+	return st.Mode, true
+}
+
+// ownConfig — конфиг службы, а не чужой из -config.
+func (a *app) ownConfig() bool {
+	return filepath.Clean(a.configPath) == filepath.Clean(filepath.Join(a.d.dir, "config.toml"))
 }
 
 // ownConfigOnly: перезапуск с повышением получает только команду — чужой -config он бы молча потерял.
 func (a *app) ownConfigOnly(command string) error {
-	if filepath.Clean(a.configPath) == filepath.Clean(filepath.Join(a.d.dir, "config.toml")) {
+	if a.ownConfig() {
 		return nil
 	}
 	return fail(exitConfig, "-config при повышении прав не передаётся: запустите killswitch -config <путь> %s "+
