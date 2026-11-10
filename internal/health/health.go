@@ -1,4 +1,4 @@
-// Package health — здоровье туннеля для DNS-режима tunnel-up (рев. 4 B1).
+// Package health — здоровье туннеля для DNS-режима tunnel-up.
 package health
 
 import (
@@ -7,7 +7,7 @@ import (
 	"github.com/DuchitskyDA/killswitch/internal/env"
 )
 
-// Параметры B1.
+// Параметры проверки здоровья.
 const (
 	Interval     = 5 * time.Second  // шаг проверки
 	Timeout      = 3 * time.Second  // ответ HTTP/ не позже

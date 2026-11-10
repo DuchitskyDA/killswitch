@@ -62,7 +62,7 @@ type Backend interface {
 	Remove() error
 	// Status читает фактическое состояние.
 	Status() (Status, error)
-	// Evidence: проба id отброшена нашим правилом после since (рев. 5). Если свидетельству нужна подготовка
+	// Evidence: проба id отброшена нашим правилом после since. Если свидетельству нужна подготовка
 	// до пробы (счётчик «до», сбор событий WFP), backend реализует probe.Preparer.
 	Evidence(id probe.ProbeID, since time.Time) (dropped bool, err error)
 	// BindControl — привязка сокета к интерфейсу для health и check.

@@ -2,7 +2,12 @@
 name = "sing-box"
 description = "sing-box: адаптер sing-tun Tunnel / tun<N> / utun<N>"
 
-verified_on = []
+# Живые проверки: Linux — лаборатория в network namespace (lab/), сценарии 1–10 v4/v6 с этим профилем
+# (TUN tun0/tun1, ядро от root). С auto_redirect — с ограничениями (README). Windows и macOS с этим профилем
+# вживую не проверялись.
+verified_on = [
+  { os = "linux", backend = "nftables", client_version = "1.14.4", date = "2026-11-10" },
+]
 
 [windows]
 # Описание адаптера sing-tun; программу (sing-box.exe) задайте в конфиге: [[trust]] kind = "program".

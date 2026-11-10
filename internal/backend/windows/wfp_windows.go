@@ -8,7 +8,7 @@ import (
 	xwin "golang.org/x/sys/windows"
 )
 
-// Фиксированные GUID: provider и sublayer создаются один раз и никогда не пересоздаются (рев. 3).
+// Фиксированные GUID: provider и sublayer создаются один раз и никогда не пересоздаются.
 var (
 	providerID = wf.ProviderID(xwin.GUID{Data1: 0x8f2c6a41, Data2: 0x93d7, Data3: 0x4b0e,
 		Data4: [8]byte{0xa5, 0xf1, 0x27, 0xc9, 0x4e, 0x6d, 0x0b, 0x3a}})

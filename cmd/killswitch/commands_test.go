@@ -39,10 +39,16 @@ func TestRepairOnLinuxIsConfigError(t *testing.T) {
 	eq(t, h.run("repair"), exitConfig)
 }
 
+// blockedExe — программа, закрытая в repair. Список repair задаёт конфиг: профили его не заполняют.
+const blockedExe = `C:\Tools\blocked.exe`
+
+const repairConfig = baseConfig + "[repair]\nprograms = ['" + blockedExe + "']\n"
+
 func TestRepairProgramsNotFoundIsConfigError(t *testing.T) {
-	h := newHarness(t, baseConfig)
+	h := newHarness(t, repairConfig)
 	h.fb.Env.Programs = nil
 	eq(t, h.run("repair"), exitConfig)
+	eq(t, strings.Contains(h.err.String(), "не найдено ни одной программы"), true)
 	eq(t, len(h.fb.Applies), 0)
 }
 

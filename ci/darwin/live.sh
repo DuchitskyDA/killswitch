@@ -1,5 +1,5 @@
 #!/bin/sh
-# Живые сценарии pf-backend (эпик, «Живые сценарии» 1–9 и 10) на одноразовом раннере macOS (ci.yml, live-darwin).
+# Живые сценарии pf-backend 1–10 (README, «Что проверено вживую») на одноразовом раннере macOS (ci.yml, live-darwin).
 # Только под root на ВМ раннера. Итог — строки RESULT S<n>.<id>; любой FAIL — код 1.
 . /private/tmp/ks-ci/lib.sh
 RUNNER_UID=$(cat "$KS/runner_uid")

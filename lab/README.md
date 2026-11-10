@@ -78,8 +78,8 @@ KSL_HOST=root@<host> KSL_SERVICES="a.service b.service" bash lab/run-accept.sh  
 KSL_HOST=root@<host> CLIENTS=xray OUT=<каталог логов> KEEP=1 bash lab/run-accept.sh
 ```
 
-`kslab accept --client <c>` прогоняет живые сценарии эпика 1–9, 10 (enforce возвращает снятую таблицу), два сценария ревизии 6
-(прямой маршрут клиента в strict, «зомби-туннель» для `dns.mode = tunnel-up`) и открытые вопросы ks-linux (а)–(г). Каждый клиент —
+`kslab accept --client <c>` прогоняет живые сценарии 1–9, 10 (enforce возвращает снятую таблицу), два дополнительных сценария
+(прямой маршрут клиента в strict, «зомби-туннель» для `dns.mode = tunnel-up`) и проверки (а)–(г) backend Linux. Каждый клиент —
 свой вызов под scope (`-p Delegate=yes`: доверенный cgroup xray — дочерний cgroup своего scope) со свежей топологией.
 
 - `killswitch` (linux/amd64 из корня) работает только в `ksl-client` и в mount ns держателя (`ksl-mnt`): tmpfs поверх `/var/lib`,
@@ -92,7 +92,7 @@ KSL_HOST=root@<host> CLIENTS=xray OUT=<каталог логов> KEEP=1 bash la
   enforce из копии бинарника. Сценарий 8: `stub-kill/nft` убивает killswitch на загрузке таблицы (после `nft -c`).
 - Итог — `run-<c>/results.json` и `report.txt`; `kslab summary */results.json` сводит таблицу сценарий × клиент × v4/v6.
 
-## Что показал спайк (для ks-linux и ks-lab)
+## Что показал первый прогон стенда (наивная политика `kslab run`)
 
 - Буквальная политика P1 рвёт транспорт всех трёх туннелей. Encap WireGuard и исходящий прокси-клиента уходят через output с oif `c0`.
   Нужно исключение: endpoint, fwmark, cgroup или uid.
@@ -114,5 +114,5 @@ KSL_HOST=root@<host> CLIENTS=xray OUT=<каталог логов> KEEP=1 bash la
   не поднимается, и `tunnel-up` не закрывает DNS к LAN. Прямые TCP-пробы redirect перехватывает даже с привязкой к c0, поэтому
   прямые пробы стенда для sing-box-ar идут от uid 65533 из `exclude_uid` клиента. DNS по TCP через sing-box с auto_redirect не
   отвечает и без killswitch.
-- WireGuard без fwmark в strict не подключается (решение «Оставить закрытым»); с fwmark — подключается.
+- WireGuard без fwmark в strict не подключается (серверы туннеля открыты только доверенным); с fwmark — подключается.
 - OpenVPN на стенде нет — не проверен.

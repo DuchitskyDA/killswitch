@@ -55,7 +55,7 @@ func (a *arena) Alloc(length uintptr) unsafe.Pointer {
 		panic("can't allocate zero bytes")
 	}
 	// killswitch: выравнивание до 8 байт — иначе структуры с указателями ложатся
-	// невыровненно и рушатся под GC (ks-spike-wfp.md).
+	// невыровненно и рушатся под GC (найдено живой проверкой на Windows).
 	length = (length + 7) &^ 7
 	if length > a.remaining {
 		a.grow()

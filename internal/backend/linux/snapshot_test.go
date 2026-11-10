@@ -161,7 +161,7 @@ func TestSnapshotDefaultRoutesPerFamily(t *testing.T) {
 	}
 }
 
-// Таблицу маршрутов не прочитать — физические интерфейсы считаются с маршрутом (как до ks-probe: пробы идут).
+// Таблицу маршрутов не прочитать — физические интерфейсы считаются с маршрутом (пробы идут, как без этого признака).
 func TestSnapshotDefaultRoutesUnreadableAssumesRoute(t *testing.T) {
 	e, err := snapBackend(t, nil).Snapshot(snapPolicy())
 	if err != nil {

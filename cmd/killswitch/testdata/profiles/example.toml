@@ -1,14 +1,13 @@
-# Пример формата профиля; профили клиентов добавляет тикет ks-profiles.
+# Фикстура тестов CLI: профиль в формате profiles/*.toml, в бинарник не встраивается.
+# Его detect ищет тот же wireguard.exe, что и встроенный профиль wireguard.
 name = "example"
-description = "Пример: WireGuard с адаптером wg-example"
+description = "Фикстура тестов: WireGuard с адаптером wg-example"
 
-# Живые проверки; пусто — профиль не проверен.
 verified_on = []
 
 [windows]
 interfaces = ["wg-example"]
 programs = ['C:\Program Files\WireGuard\wireguard.exe']
-repair_programs = ['C:\Program Files\WireGuard\wireguard.exe']
 detect = ['C:\Program Files\WireGuard\wireguard.exe']
 
 [linux]

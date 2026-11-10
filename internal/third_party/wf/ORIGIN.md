@@ -5,7 +5,7 @@
 
 ## Правки killswitch (помечены комментарием `killswitch:`)
 - Все файлы: `//go:build windows` — пакет собирается только под Windows.
-- `malloc.go`: выделения арены выровнены до 8 байт (без выравнивания `toFilter0` падал под GC — спайк WFP).
+- `malloc.go`: выделения арены выровнены до 8 байт (без выравнивания `toFilter0` падал под GC — найдено живой проверкой на Windows).
 - `types.go`, `zfilterenumflags_strings.go`: верные значения `FWP_FILTER_ENUM_FLAG_*` (0x1…0x10 вместо 1…5), строка флагов — руками.
 - `compose.go`, `parse.go`: без `go4.org/netipx`; диапазон адресов — `Range{netip.Addr, netip.Addr}`.
 - `parse.go`: `Rule.Weight` — заданный вес фильтра, эффективный — только запасной.

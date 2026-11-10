@@ -362,7 +362,7 @@ type probeSnap struct {
 	table        uint64
 }
 
-// BeforeProbe запоминает счётчики порта пробы (рев. 5: свидетельство — рост счётчика нашего drop; ks-probe: признак
+// BeforeProbe запоминает счётчики порта пробы (свидетельство — рост счётчика нашего drop; признак
 // выхода — рост счётчика egress). Сбой чтения egress не мешает пробе: признака выхода тогда нет.
 func (b *Backend) BeforeProbe(id probe.ProbeID) error {
 	port := id.Src.Port()

@@ -27,7 +27,7 @@ const (
 // resolvConfs — откуда берутся резолверы физики: upstream systemd-resolved, иначе /etc/resolv.conf.
 var resolvConfs = []string{"/run/systemd/resolve/resolv.conf", "/etc/resolv.conf"}
 
-// Snapshot собирает всё, что читает систему и сеть (рев. 4 B4). Glob раскрываются независимо от режима.
+// Snapshot собирает всё, что читает систему и сеть. Glob раскрываются независимо от режима.
 func (b *Backend) Snapshot(p policy.Policy) (env.Env, error) {
 	ifaces, err := b.ifaces()
 	if err != nil {

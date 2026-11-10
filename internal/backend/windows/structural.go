@@ -23,12 +23,12 @@ type ForeignFilter struct {
 	Conds          []Cond
 }
 
-// TieFindings — ничья 0xFFFF (решение владельца «б»): чужой sublayer с весом ≥ фактического веса нашего и с hard
+// TieFindings — ничья 0xFFFF — это LEAK: чужой sublayer с весом ≥ фактического веса нашего и с hard
 // permit, область которого выходит за нашу фактическую область. WFP не держит два sublayer с одним весом: созданный
 // позже получает 0xFFFE (дым windows-2025), поэтому «создан раньше нашего» видно по весам, а не по порядку перечисления.
 // Чужой permit безопасен, только если весь пропускаемый им трафик наш набор пропустил бы и сам в текущем режиме:
 // есть наш permit на том же слое, чья область его покрывает, и ни один наш block выше этого permit (block-repair 30)
-// с ним не пересекается. Так подслой клиента (sing-box со случайным GUID) узнаётся по программам профиля (рев. 6),
+// с ним не пересекается. Так подслой клиента (sing-box со случайным GUID) узнаётся по программам профиля,
 // strict ограничивает их Endpoints, а программы repair безопасной области не имеют вовсе.
 func TieFindings(sublayers []SublayerInfo, ours string, foreign []ForeignFilter, own []Filter) []probe.StructuralFinding {
 	ourWeight := MaxWeight

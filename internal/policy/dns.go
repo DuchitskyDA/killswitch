@@ -21,7 +21,7 @@ var LANMulticast = []netip.Prefix{
 	netip.MustParsePrefix("ff02::1:3/128"),
 }
 
-// DNSPermits — что разрешено для TCP/UDP 53 на физических интерфейсах (матрица A11, рев. 5).
+// DNSPermits — что разрешено для TCP/UDP 53 на физических интерфейсах (матрица DNS, README).
 // Через туннельный интерфейс DNS разрешён всегда; флаг LAN на DNS не влияет.
 type DNSPermits struct {
 	LAN    bool           // к LANPrefixes

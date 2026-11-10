@@ -2,7 +2,11 @@
 name = "wireguard"
 description = "WireGuard: адаптер WireGuard Tunnel / wg* / utun*"
 
-verified_on = []
+# Живые проверки: Linux — лаборатория в network namespace (lab/), сценарии 1–10 v4/v6 с этим профилем
+# (интерфейсы wg0/wg1, метка 0xca6c). Windows и macOS с этим профилем вживую не проверялись.
+verified_on = [
+  { os = "linux", backend = "nftables", client_version = "linux 6.17 (модуль ядра)", date = "2026-11-10" },
+]
 
 [windows]
 interfaces = ["WireGuard Tunnel*"]

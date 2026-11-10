@@ -9,7 +9,7 @@ import (
 	"github.com/DuchitskyDA/killswitch/internal/env"
 )
 
-// Service — слушающий сервис цели check (рев. 3: HTTP 80, UDP-эхо 443, DNS 53).
+// Service — слушающий сервис цели check: HTTP 80, UDP-эхо 443, DNS 53.
 type Service struct {
 	Name  string
 	Proto string
@@ -181,7 +181,7 @@ func routedTunnel(in Input, dst netip.Addr) (env.Iface, bool) {
 
 // answered — сервер ответил на прямую пробу. Утечка, кроме случая, когда backend доказал, что пакет пробы через
 // физический интерфейс не уходил: клиент туннеля перехватил пробу и ответ пришёл через туннель — тогда пропуск с
-// пометкой (решение владельца), итог — по остальным пробам. Признака нет или он не прочитан — утечка, как раньше.
+// пометкой, итог — по остальным пробам. Признака нет или он не прочитан — утечка, как раньше.
 func (r *runner) answered(id ProbeID) (Class, string) {
 	if eg, ok := r.ev.(Egress); ok {
 		if sent, err := eg.Egressed(id); err == nil && !sent {

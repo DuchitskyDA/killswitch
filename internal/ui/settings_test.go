@@ -195,8 +195,8 @@ func TestTrustRemoveLeavesExplicitEmpty(t *testing.T) {
 
 func TestRepairProgramsOnWindows(t *testing.T) {
 	f := &fakeActions{}
-	runMenu("windows", f, steps("5", "6", "1", `C:\claude.exe`, "0")...)
-	eq(t, f.lastSaved(t).Repair.Programs, &[]string{`C:\claude.exe`})
+	runMenu("windows", f, steps("5", "6", "1", `C:\blocked.exe`, "0")...)
+	eq(t, f.lastSaved(t).Repair.Programs, &[]string{`C:\blocked.exe`})
 }
 
 func TestRepairHiddenInSettingsOnDarwin(t *testing.T) {
@@ -226,7 +226,7 @@ func TestTrustAddInStrictOnlyToEndpoints(t *testing.T) {
 	eq(t, p.Trust, []policy.Trust{{Kind: policy.KindProgram, Value: `C:\x.exe`, Destinations: policy.DestEndpoints}})
 }
 
-// Решение владельца «Описать ограничение»: при выборе tunnel-up на Linux меню предупреждает про sing-box auto_redirect.
+// При выборе tunnel-up на Linux меню предупреждает про sing-box auto_redirect.
 const autoRedirectHint = "с sing-box auto_redirect режим tunnel-up не поднимается — используйте open или свои резолверы"
 
 func TestDNSTunnelUpOnLinuxWarnsAutoRedirect(t *testing.T) {

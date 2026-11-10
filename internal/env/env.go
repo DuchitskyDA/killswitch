@@ -97,7 +97,7 @@ func (e Env) matchesAny(patterns []string, i Iface) bool {
 	return false
 }
 
-// WithLastKnown подставляет последние известные адреса для имён, которые сейчас не разрешились (рев. 4 B4).
+// WithLastKnown подставляет последние известные адреса для имён, которые сейчас не разрешились.
 // Имя без известных адресов остаётся без адресов (Trust к нему ничего не разрешает) и даёт строку WARN.
 func WithLastKnown(e Env, last map[string][]netip.Addr) (Env, []string) {
 	resolved := make(map[string][]netip.Addr, len(e.Resolved)+len(e.ResolveErr))

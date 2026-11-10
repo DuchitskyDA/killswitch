@@ -197,7 +197,7 @@ func TestUnsafeNamesSkipped(t *testing.T) {
 	}
 }
 
-// Ужесточение доверия (A8): метку соединения ставит только cgroup (его ядро в postrouting не видит); user и mark
+// Ужесточение доверия: метку соединения ставит только cgroup (его ядро в postrouting не видит); user и mark
 // проверяются в postrouting напрямую, поэтому снятое доверие к ним не переживает смену набора.
 func TestOnlyCgroupCarriesLabel(t *testing.T) {
 	p := basePolicy()

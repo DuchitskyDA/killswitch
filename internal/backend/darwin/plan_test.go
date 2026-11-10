@@ -122,11 +122,11 @@ func TestRenderLANFalseKeepsDNSAndClosesLAN(t *testing.T) {
 		t.Errorf("LAN=false: разрешения LAN быть не должно:\n%s", got)
 	}
 	if !strings.Contains(got, "fe80::/10 } port 53 no state") {
-		t.Errorf("LAN=false: DNS к LAN по матрице A11 остаётся:\n%s", got)
+		t.Errorf("LAN=false: DNS к LAN по матрице DNSPermits остаётся:\n%s", got)
 	}
 }
 
-// Рев. 6: pf знает владельца только у TCP и UDP — доверенному не разрешаются ICMP и фрагменты.
+// pf знает владельца только у TCP и UDP — доверенному не разрешаются ICMP и фрагменты.
 func TestRenderTrustedUserOnlyTCPAndUDP(t *testing.T) {
 	for _, p := range []policy.Policy{basePolicy(), strictPolicy()} {
 		for _, l := range linesWith(render(t, p, baseEnv()), " user ") {

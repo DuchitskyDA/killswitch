@@ -221,7 +221,7 @@ func answeredWith(ev EvidenceSource) CheckResult {
 	return Run(context.Background(), oneTarget, &fakeProber{answered: true}, ev, now)
 }
 
-// Решение владельца: проба, перехваченная клиентом (ответ есть, через физику не ушла), — пропуск с пометкой.
+// Проба, перехваченная клиентом (ответ есть, через физику не ушла), — пропуск с пометкой.
 func TestRunAnswerNotSentPhysicallyIsSkipped(t *testing.T) {
 	r := answeredWith(egressEvidence{sent: false})
 	eq(t, r.Probes[0].Class, Skipped)
