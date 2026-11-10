@@ -17,6 +17,7 @@ import (
 	"github.com/DuchitskyDA/killswitch/internal/probe"
 	"github.com/DuchitskyDA/killswitch/internal/profile"
 	"github.com/DuchitskyDA/killswitch/internal/state"
+	"github.com/DuchitskyDA/killswitch/internal/window"
 )
 
 // Коды выхода CLI.
@@ -34,6 +35,7 @@ const usage = `использование: killswitch [-config путь] <ком
   status                состояние; код 4 — структурная утечка
   check                 пробы утечки; 0 — блок, 4 — утечка, 5 — нет уверенности
   detect                найти установленные клиенты по профилям
+  window                окно: состояние и настройки на локальной странице
   enforce               наблюдатель (служба)
   uninstall             снять всё без конфига и сети
   plan [on|off|repair]  напечатать правила без применения`
@@ -49,12 +51,15 @@ type deps struct {
 	profiles fs.FS
 	glob     func(pattern string) ([]string, error)
 	prober   func(b backend.Backend) probe.Prober
-	// Меню (killswitch без аргументов): ввод, терминал ли stdin/stdout, права администратора,
-	// перезапуск с повышением (nil — ОС без повышения: нужен sudo).
+	// Меню (killswitch без аргументов) и окно (killswitch window): ввод, терминал ли stdin/stdout,
+	// права администратора, перезапуск команды с повышением (nil — ОС без повышения: нужен sudo).
 	in       io.Reader
 	terminal func() bool
 	admin    func() bool
-	elevate  func() error
+	elevate  func(command string) error
+	// Окно: машина, на которой оно открывается, и срок ожидания первого открытия (0 — по умолчанию).
+	host        window.Host
+	windowStart time.Duration
 }
 
 type app struct {
@@ -108,8 +113,11 @@ func exitCode(d deps, err error) int {
 }
 
 func (a *app) dispatch(ctx context.Context, cmd string, rest []string) error {
-	if cmd == "detect" {
+	switch cmd {
+	case "detect":
 		return a.detect()
+	case "window":
+		return a.window(ctx)
 	}
 	known := map[string]bool{"on": true, "off": true, "repair": true, "status": true, "check": true,
 		"enforce": true, "uninstall": true, "plan": true}
@@ -226,13 +234,25 @@ func (a *app) snapshot(p policy.Policy, st state.State, h env.HealthState) (env.
 	return e, nil
 }
 
-// planFor: проверка путей repair и чистый план.
+// planFor: проверка списка repair и чистый план. Шаблон пути без файлов — ошибка; имя без файлов —
+// предупреждение; по всему списку нет ни одного файла — ошибка.
 func (a *app) planFor(p policy.Policy, e env.Env) (backend.Ruleset, error) {
 	if p.Mode == policy.ModeRepair {
+		found := 0
 		for _, g := range p.Repair.Programs {
 			if len(e.Programs[g]) == 0 {
 				return nil, fail(exitConfig, "repair: по шаблону %q не найдено ни одной программы", g)
 			}
+			found += len(e.Programs[g])
+		}
+		for _, n := range p.Repair.Names {
+			if len(e.Programs[backend.NameKey(n)]) == 0 {
+				fmt.Fprintf(a.d.err, "WARN repair: по имени %q программа не найдена\n", n)
+			}
+			found += len(e.Programs[backend.NameKey(n)])
+		}
+		if found == 0 {
+			return nil, fail(exitConfig, "repair: по именам %q не найдено ни одной программы", p.Repair.Names)
 		}
 	}
 	r, err := a.b.Plan(p, e)

@@ -142,8 +142,9 @@ func ParseHealthURL(s string) (HealthURL, error) {
 	return HealthURL{Addr: ap, Path: "/" + path}, nil
 }
 
-// Repair — режим repair: открыто всё, кроме этих программ.
-type Repair struct{ Programs []string }
+// Repair — режим repair: открыто всё, кроме этих программ. Programs — шаблоны путей; Names — имена программ без
+// пути и расширения: их файлы backend находит сам (запущенные и обычные места установки).
+type Repair struct{ Programs, Names []string }
 
 // Check — цели проб check (слушают HTTP 80, UDP-эхо 443, DNS 53).
 type Check struct{ Targets []netip.Addr }

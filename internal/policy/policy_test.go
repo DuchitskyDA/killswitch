@@ -132,6 +132,29 @@ func TestValidateRepairWindowsNeedsPrograms(t *testing.T) {
 	noErr(t, p.Validate(windows))
 }
 
+func TestValidateRepairWindowsAcceptsNamesAlone(t *testing.T) {
+	p := base().WithMode(ModeRepair)
+	p.Repair.Names = []string{"node"}
+	noErr(t, p.Validate(windows))
+}
+
+func TestBuildReadsRepairNames(t *testing.T) {
+	p := build(t, "[repair]\nnames = ['node', 'python3.12']\n", Layer{Interfaces: []string{"wg0"}})
+	eq(t, p.Repair.Names, []string{"node", "python3.12"})
+	noErr(t, p.Validate(windows))
+}
+
+// Имя — без пути, расширения и знаков шаблона: по нему утилита сама строит шаблоны мест установки.
+func TestValidateRejectsBadProgramNames(t *testing.T) {
+	for _, name := range []string{"", " node", `bin\node`, "bin/node", "C:node", "node*", "no?e", "node[1]", "node.exe", "Node.EXE"} {
+		p := base()
+		p.Repair.Names = []string{name}
+		if p.Validate(windows) == nil {
+			t.Errorf("имя %q принято", name)
+		}
+	}
+}
+
 func TestValidateNoTunnelInterfaces(t *testing.T) {
 	p := base()
 	p.Tunnel.Interfaces = nil

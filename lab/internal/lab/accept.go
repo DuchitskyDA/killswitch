@@ -35,8 +35,10 @@ type Check struct {
 	Log      string `json:"log,omitempty"`
 }
 
-// Scenarios — порядок строк таблицы: живые сценарии 1–9, 10 (enforce восстанавливает), прямой маршрут, «зомби-туннель» и проверки (а)–(г).
-var Scenarios = []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "r6-маршрут", "r6-зомби", "(а)", "(б)", "(в)", "(г)", ScenarioNoDefault}
+// Scenarios — порядок строк таблицы: живые сценарии 1–9, 10 (enforce восстанавливает), прямой маршрут, «зомби-туннель», проверки (а)–(г),
+// интерфейс без маршрута по умолчанию и окно.
+var Scenarios = []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "r6-маршрут", "r6-зомби", "(а)", "(б)", "(в)", "(г)", ScenarioNoDefault,
+	ScenarioWindow}
 
 // Cell — итог ячейки таблицы.
 type Cell struct {
@@ -205,7 +207,11 @@ type ConfigOpts struct {
 	TunnelUpDNS    bool     // dns.mode = tunnel-up, dns.health через туннель к «интернету»
 	CgroupPath     string   // путь доверенного cgroup относительно /sys/fs/cgroup (xray)
 	ExtraEndpoints []string // дополнительные endpoints strict (проверка (а))
+	NoTargets      bool     // без [check] targets: check делает простую проверку
 }
+
+// SimpleHost — сайт простой проверки check; на стенде его имя ведёт на «интернет»-хост (hosts в mount ns).
+const SimpleHost = "example.com"
 
 // HealthURL — dns.health приёмки: HTTP «интернет»-хоста, отвечает только через живой туннель.
 var HealthURL = fmt.Sprintf("http://%s:%d/", topo.InetV4, topo.HTTPPort)
@@ -232,7 +238,9 @@ func (c ClientDef) Config(o ConfigOpts) string {
 	if o.TunnelUpDNS {
 		fmt.Fprintf(&b, "\n[dns]\nmode = \"tunnel-up\"\nhealth = %q\n", HealthURL)
 	}
-	fmt.Fprintf(&b, "\n[check]\ntargets = %s\n", tomlList([]string{topo.InetV4.String(), topo.InetV6.String()}))
+	if !o.NoTargets {
+		fmt.Fprintf(&b, "\n[check]\ntargets = %s\n", tomlList([]string{topo.InetV4.String(), topo.InetV6.String()}))
+	}
 	return b.String()
 }
 

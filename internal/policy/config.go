@@ -47,6 +47,7 @@ type configDNS struct {
 
 type configRepair struct {
 	Programs *[]string `toml:"programs"`
+	Names    *[]string `toml:"names"`
 }
 
 type configCheck struct {
@@ -113,6 +114,9 @@ func (c Config) applyLists(p *Policy) error {
 	}
 	if c.Repair.Programs != nil {
 		p.Repair.Programs = *c.Repair.Programs
+	}
+	if c.Repair.Names != nil {
+		p.Repair.Names = *c.Repair.Names
 	}
 	if c.Trust != nil {
 		p.Trust = toTrust(*c.Trust)

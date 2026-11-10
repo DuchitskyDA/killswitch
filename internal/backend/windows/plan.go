@@ -104,7 +104,7 @@ func overlay(p policy.Policy, e env.Env, l Layer) []Filter {
 	}
 	out := []Filter{{Name: "permit-all", Layer: l, Action: Permit, Weight: WeightPermitAll}}
 	if p.Mode == policy.ModeRepair {
-		if c := appConds(p.Repair.Programs, e); len(c) > 0 {
+		if c := appConds(repairKeys(p), e); len(c) > 0 {
 			out = append(out, Filter{Name: "repair block", Layer: l, Action: Block, Weight: WeightBlockRepair, Hard: true, Conds: c})
 		}
 	}
@@ -132,6 +132,15 @@ func tunnelConds(p policy.Policy, e env.Env) []Cond {
 		out = append(out, Cond{Field: FieldLocalIface, LUID: i.LUID})
 	}
 	return out
+}
+
+// repairKeys — ключи Env.Programs списка починки: шаблоны путей и имена.
+func repairKeys(p policy.Policy) []string {
+	keys := append([]string{}, p.Repair.Programs...)
+	for _, n := range p.Repair.Names {
+		keys = append(keys, backend.NameKey(n))
+	}
+	return keys
 }
 
 // appConds — app-id программ по glob; glob без найденных путей ничего не разрешает (fail-closed).

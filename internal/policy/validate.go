@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strings"
 )
 
 // Capabilities — что backend ОС умеет исполнить. Неподдержанное в политике — ошибка, без замены.
@@ -31,6 +32,7 @@ func CapabilitiesFor(goos string) Capabilities {
 func (p Policy) Validate(c Capabilities) error {
 	return errors.Join(
 		p.validateMode(c),
+		p.validateRepair(),
 		p.validateTunnel(c),
 		p.validateTrust(c),
 		p.validateDNS(),
@@ -47,8 +49,34 @@ func (p Policy) validateMode(c Capabilities) error {
 	if !c.Repair {
 		return fmt.Errorf("режим repair не поддерживается на %s", c.OS)
 	}
-	if len(p.Repair.Programs) == 0 {
-		return errors.New("repair: не задано ни одной программы (repair.programs)")
+	if len(p.Repair.Programs)+len(p.Repair.Names) == 0 {
+		return errors.New("repair: не задано ни одной программы (repair.names или repair.programs)")
+	}
+	return nil
+}
+
+func (p Policy) validateRepair() error {
+	var errs []error
+	for _, n := range p.Repair.Names {
+		if err := CheckProgramName(n); err != nil {
+			errs = append(errs, fmt.Errorf("repair.names %q: %w", n, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// CheckProgramName — имя программы для repair.names: имя файла без пути и расширения (node).
+// Знаки шаблона запрещены: шаблоны мест установки по имени строит backend.
+func CheckProgramName(name string) error {
+	switch {
+	case name == "":
+		return errors.New("пустое имя")
+	case strings.TrimSpace(name) != name:
+		return errors.New("пробелы по краям")
+	case strings.ContainsAny(name, `\/:*?"<>|[]`):
+		return errors.New(`нужно имя без пути и знаков \ / : * ? " < > | [ ]`)
+	case strings.HasSuffix(strings.ToLower(name), ".exe"):
+		return errors.New("нужно имя без расширения .exe")
 	}
 	return nil
 }

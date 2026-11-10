@@ -51,6 +51,8 @@ func dispatch(cmd string, args []string) error {
 		return mark(args)
 	case "wgset":
 		return wgsetCmd(args)
+	case "http":
+		return httpCmd(args)
 	}
 	return fmt.Errorf("неизвестная подкоманда %q", cmd)
 }
@@ -206,6 +208,31 @@ func wgsetCmd(args []string) error {
 		return err
 	}
 	return wgset.Apply(c)
+}
+
+// httpCmd — один запрос «браузера» приёмки к окну killswitch: описание запроса — JSON в stdin (cookie сеанса не видна
+// в аргументах процесса), ответ — JSON в stdout. Адрес — только http://127.0.0.1:<порт> этого ns.
+func httpCmd(args []string) error {
+	var uid *uint
+	if _, err := inner("http", args, func(fs *flag.FlagSet) {
+		uid = fs.Uint("uid", 0, "понизить права до uid (и gid того же номера) после сверки ns")
+	}); err != nil {
+		return err
+	}
+	if *uid != 0 {
+		if err := dropTo(int(*uid)); err != nil {
+			return err
+		}
+	}
+	b, err := io.ReadAll(io.LimitReader(os.Stdin, 4<<20))
+	if err != nil {
+		return err
+	}
+	var s lab.HTTPSpec
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(lab.DoHTTP(s))
 }
 
 // dropTo понижает права пробы: сверка ns (stat /proc/1/ns/net) уже прошла от root, дальше — «обычная программа».

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DuchitskyDA/killswitch/internal/backend"
 	"github.com/DuchitskyDA/killswitch/internal/policy"
 )
 
@@ -41,6 +42,8 @@ type Actions interface {
 	Detect() []string                   // имена профилей установленных клиентов
 	Profiles() []Profile                // по имени
 	LoadConfig() (policy.Config, error) // нет файла — пустой конфиг
+	// Running — запущенные программы для выбора имён починки; ОС без перечисления — пустой список.
+	Running() ([]backend.Program, error)
 	// Save проверяет конфиг тем же путём, что on, при успехе атомарно пишет config.toml и применяет
 	// текущий режим. saved — строка итога, непустая, если файл записан (в том числе когда применение не удалось);
 	// err — готовый для показа текст ошибки.

@@ -74,6 +74,20 @@ type Watcher interface {
 	Changes() <-chan struct{}
 }
 
+// Program — программа: имя файла без пути и расширения .exe и полный путь исполняемого файла.
+type Program struct{ Name, Path string }
+
+// ProgramLister — необязательно (Windows): запущенные программы с известным путём — без дублей пути, по имени
+// и пути. Из них пользователь выбирает имена для repair.names.
+type ProgramLister interface {
+	RunningPrograms() ([]Program, error)
+}
+
+// NameKey и NameFilesKey — ключи Env.Programs для найденного по имени из repair.names: идентификаторы программ
+// для правил и пути тех же файлов для показа. С шаблоном пути не совпадают: имя диска — одна буква.
+func NameKey(name string) string      { return "name:" + name }
+func NameFilesKey(name string) string { return "files:" + name }
+
 // ErrConfig — ошибка плана из-за конфига (код 2).
 var ErrConfig = errors.New("ошибка конфига")
 

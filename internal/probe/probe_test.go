@@ -17,6 +17,22 @@ type fakeProber struct {
 	answeredProto string // отвечает только на пробы этого протокола ("tcp"|"udp")
 	sent          []ProbeID
 	baselines     []string // "tunnel <iface>" | "route <iface>"
+
+	// простая проверка
+	resolved   []netip.Addr
+	resolveErr error
+	plainErr   map[netip.Addr]error // нет записи — обычным путём адрес отвечает
+	plain      []netip.Addr         // адреса, к которым шёл обмен обычным путём
+	services   []Service            // сервисы прямых проб
+}
+
+func (f *fakeProber) Resolve(context.Context, string) ([]netip.Addr, error) {
+	return f.resolved, f.resolveErr
+}
+
+func (f *fakeProber) Plain(_ context.Context, _ Service, dst netip.Addr) error {
+	f.plain = append(f.plain, dst)
+	return f.plainErr[dst]
 }
 
 func (f *fakeProber) Tunnel(_ context.Context, _ Service, _ netip.Addr, tun env.Iface) error {
@@ -29,8 +45,9 @@ func (f *fakeProber) Route(_ context.Context, _ Service, _ netip.Addr, tun env.I
 	return f.tunnelErr
 }
 
-func (f *fakeProber) Direct(_ context.Context, _ Service, id ProbeID, _ env.Iface) (bool, error) {
+func (f *fakeProber) Direct(_ context.Context, s Service, id ProbeID, _ env.Iface) (bool, error) {
 	f.sent = append(f.sent, id)
+	f.services = append(f.services, s)
 	return f.answered || (f.answeredProto != "" && id.Proto == f.answeredProto), nil
 }
 
@@ -139,9 +156,11 @@ func TestRunFamilyWithoutAddressIsSkipped(t *testing.T) {
 	eq(t, r.Probes[len(Services)].Class, Skipped)
 }
 
-func TestRunNoTargetsIsInconclusive(t *testing.T) {
-	r := run(Input{Tunnels: []env.Iface{tun}, Physical: []env.Iface{eth}}, &fakeProber{}, fakeEvidence{dropped: true})
-	eq(t, r.Overall, Inconclusive)
+func TestRunWithTargetsIsNotSimple(t *testing.T) {
+	p := &fakeProber{resolved: []netip.Addr{target4}}
+	r := run(oneTarget, p, fakeEvidence{dropped: true})
+	eq(t, r.Simple, false)
+	eq(t, len(p.plain), 0)
 }
 
 func TestRunStructuralWithBlockedProbesIsLeak(t *testing.T) {

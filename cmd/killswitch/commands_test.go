@@ -104,10 +104,49 @@ func TestCheckRulesRemovedIsLeak(t *testing.T) {
 	eq(t, h.run("check"), exitLeak)
 }
 
-func TestCheckWithoutTargetsIsInconclusive(t *testing.T) {
+// simpleCheck — check без своих адресов: простая проверка по сайту с адресом 203.0.113.10.
+func simpleCheck(t *testing.T) *harness {
 	h := newHarness(t, "profile = \"example\"\n")
-	h.fb.Dropped = true
+	h.prober.resolved = []netip.Addr{netip.MustParseAddr("203.0.113.10")}
+	return h
+}
+
+const simpleNote = "проверен только TCP; UDP и DNS не проверялись — для полной проверки задайте свои адреса"
+
+// С физического адаптера ответа нет, обычным путём сайт отвечает: код 0 и честная оговорка.
+func TestCheckSimpleNoLeakIsOKWithNote(t *testing.T) {
+	h := simpleCheck(t)
+	eq(t, h.run("check"), exitOK)
+	out := h.out.String()
+	eq(t, strings.Contains(out, "простая проверка: HTTP к example.com"), true)
+	eq(t, strings.Contains(out, "BLOCKED Ethernet v4 http 203.0.113.10:80"), true)
+	eq(t, strings.Contains(out, "утечек не найдено (простая проверка)\n"+simpleNote), true)
+}
+
+func TestCheckSimpleAnswerFromPhysicalIsLeak(t *testing.T) {
+	h := simpleCheck(t)
+	h.prober.answered = true
+	eq(t, h.run("check"), exitLeak)
+	out := h.out.String()
+	eq(t, strings.Contains(out, "УТЕЧКА (простая проверка)"), true)
+	eq(t, strings.Contains(out, "утечек не найдено"), false)
+}
+
+func TestCheckSimpleNoAnswerAnywhereIsInconclusiveWithReason(t *testing.T) {
+	h := simpleCheck(t)
+	h.prober.plainErr = errors.New("i/o timeout")
 	eq(t, h.run("check"), exitInconclusive)
+	out := h.out.String()
+	eq(t, strings.Contains(out, "нет уверенности (простая проверка): ответа нет, но и обычным путём example.com не ответил: i/o timeout"), true)
+	eq(t, strings.Contains(out, simpleNote), false)
+}
+
+// Свои адреса заданы — полная проверка, строк простой нет.
+func TestCheckWithTargetsHasNoSimpleLines(t *testing.T) {
+	h := newHarness(t, baseConfig)
+	h.fb.Dropped = true
+	eq(t, h.run("check"), exitOK)
+	eq(t, strings.Contains(h.out.String(), "простая проверка"), false)
 }
 
 func TestDetectFindsProfileByPath(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/DuchitskyDA/killswitch/internal/backend"
 	"github.com/DuchitskyDA/killswitch/internal/policy"
 )
 
@@ -52,10 +53,10 @@ func (s *settings) items() []item {
 		{s.trustTitle() + ": " + s.trustSummary(), s.trustScreen},
 	}
 	if s.m.caps.Repair {
-		items = append(items, item{"Закрыты в починке: " + summary(s.repairList().items, "никто"), s.repairScreen})
+		items = append(items, item{"Закрыты в починке: " + s.repairSummary(), s.repairScreen})
 	}
 	items = append(items,
-		item{"Адреса для проверки утечек: " + summary(strList(s.cfg.Check.Targets).items, "не заданы"), s.targetsScreen},
+		item{"Адреса для проверки утечек: " + summary(strList(s.cfg.Check.Targets).items, "не заданы — простая проверка"), s.targetsScreen},
 		item{"Применить и сохранить", s.apply},
 	)
 	return items
@@ -498,9 +499,112 @@ func (s *settings) repairList() listValue[string] {
 	return v
 }
 
+// repairSummary — имена и пути одной строкой для пункта настроек.
+func (s *settings) repairSummary() string {
+	return summary(append(strList(s.cfg.Repair.Names).items, s.repairList().items...), "никто")
+}
+
 func (s *settings) repairScreen() {
+	for !s.m.done {
+		paths := s.repairList()
+		items := []item{
+			{"По имени: " + summary(strList(s.cfg.Repair.Names).items, "не заданы"), s.repairNamesScreen},
+			{"Выбрать из запущенных", s.pickRunning},
+			{"По пути: " + summary(paths.items, "не заданы") + inheritNote(s.cfg.Profile != "", paths.set), s.repairPathsScreen},
+		}
+		if !s.m.choose("Закрыты в починке — в режиме починки только им закрыт выход", items, "Назад") {
+			return
+		}
+	}
+}
+
+func (s *settings) repairNamesScreen() {
 	v, changed := editList(s.m, listSpec[string]{
-		title:   "Закрыты в починке — в режиме починки только им закрыт выход",
+		title:  "Программы по имени — файлы находятся сами: запущенные и в обычных местах установки",
+		format: identity,
+		add: func() (string, bool) {
+			n, ok := s.m.prompt("Имя программы, например node", func(n string) error {
+				return policy.CheckProgramName(trimExe(n))
+			})
+			return trimExe(n), ok
+		},
+	}, strList(s.cfg.Repair.Names))
+	if changed {
+		c := s.cfg
+		c.Repair.Names = putStrList(v)
+		s.changed(c)
+	}
+}
+
+// trimExe: имя в конфиге — без расширения; набранное «node.exe» принимается как «node».
+func trimExe(name string) string {
+	if strings.HasSuffix(strings.ToLower(name), ".exe") {
+		return name[:len(name)-len(".exe")]
+	}
+	return name
+}
+
+// RunningName — строка списка запущенных: имя и где лежит его файл.
+type RunningName struct {
+	Name  string
+	Paths []string
+}
+
+// RunningNames — по одной строке на имя (без учёта регистра), в порядке списка; имя, непригодное для
+// repair.names, пропускается. Одна группировка для меню и окна.
+func RunningNames(progs []backend.Program) []RunningName {
+	var out []RunningName
+	for _, p := range progs {
+		if policy.CheckProgramName(p.Name) != nil {
+			continue
+		}
+		i := slices.IndexFunc(out, func(r RunningName) bool { return strings.EqualFold(r.Name, p.Name) })
+		if i < 0 {
+			out = append(out, RunningName{Name: p.Name})
+			i = len(out) - 1
+		}
+		out[i].Paths = append(out[i].Paths, p.Path)
+	}
+	return out
+}
+
+func (s *settings) pickRunning() {
+	progs, err := s.m.act.Running()
+	if err != nil {
+		s.m.report(err)
+		return
+	}
+	names := RunningNames(progs)
+	if len(names) == 0 {
+		s.m.printf("запущенные программы не найдены\n")
+		return
+	}
+	s.m.printf("\nЗапущенные программы\n")
+	for i, r := range names {
+		more := ""
+		if len(r.Paths) > 1 {
+			more = fmt.Sprintf(" (и ещё %d)", len(r.Paths)-1)
+		}
+		s.m.printf("    %d. %s — %s%s\n", i+1, r.Name, r.Paths[0], more)
+	}
+	i, ok := s.m.pickLine(len(names))
+	if !ok {
+		return
+	}
+	name, cur := names[i].Name, strList(s.cfg.Repair.Names)
+	if slices.ContainsFunc(cur.items, func(x string) bool { return strings.EqualFold(x, name) }) {
+		s.m.printf("%s уже в списке\n", name)
+		return
+	}
+	c := s.cfg
+	c.Repair.Names = putStrList(listValue[string]{items: append(cur.items, name), set: true})
+	s.changed(c)
+	s.m.printf("добавлено: %s\n", name)
+}
+
+func (s *settings) repairPathsScreen() {
+	v, changed := editList(s.m, listSpec[string]{
+		title:   "Программы по пути (можно * и ?)",
 		profile: s.layer().RepairPrograms,
 		inherit: s.cfg.Profile != "",
 		format:  identity,
@@ -517,7 +621,7 @@ func (s *settings) repairScreen() {
 
 func (s *settings) targetsScreen() {
 	v, changed := editList(s.m, listSpec[string]{
-		title:  "Адреса для проверки утечек (слушают HTTP 80, UDP-эхо 443, DNS 53)",
+		title:  "Свои адреса для полной проверки утечек (слушают HTTP 80, UDP-эхо 443, DNS 53); без них — простая проверка",
 		format: identity,
 		add: func() (string, bool) {
 			return s.m.prompt("IP-адрес цели", func(a string) error {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DuchitskyDA/killswitch/internal/backend"
 	"github.com/DuchitskyDA/killswitch/internal/policy"
 )
 
@@ -23,7 +24,11 @@ type fakeActions struct {
 	transitions []policy.Mode
 	checks      int
 	saved       [][]byte
+	running     []backend.Program
+	runningErr  error
 }
+
+func (f *fakeActions) Running() ([]backend.Program, error) { return f.running, f.runningErr }
 
 func (f *fakeActions) Header() Header { return f.header }
 

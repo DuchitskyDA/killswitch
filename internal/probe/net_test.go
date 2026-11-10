@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/netip"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -37,6 +38,67 @@ func TestDirectSendsFromPlannedSourcePort(t *testing.T) {
 	noErr(t, err)
 	eq(t, ok, true)
 	eq(t, <-from, src)
+}
+
+// Порт-источник пробы занят: проба не уходила — это ошибка, а не «сервер не ответил».
+func TestDirectReportsBusySourcePort(t *testing.T) {
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	noErr(t, err)
+	defer busy.Close()
+	dst, err := net.Listen("tcp", "127.0.0.1:0")
+	noErr(t, err)
+	defer dst.Close()
+	id := ProbeID{Proto: "tcp", Src: busy.Addr().(*net.TCPAddr).AddrPort(), Dst: dst.Addr().(*net.TCPAddr).AddrPort()}
+	noBind := health.Binder(func(env.Iface) health.ControlFunc {
+		return func(string, string, syscall.RawConn) error { return nil }
+	})
+	n := NetProber{Bind: noBind, Timeout: time.Second}
+	ok, err := n.Direct(context.Background(), Service{Name: "http", Proto: "tcp", Port: id.Dst.Port()}, id, env.Iface{Name: "lo"})
+	if err == nil {
+		t.Fatalf("занятый порт-источник: ждали ошибку, получили ответ=%v без ошибки", ok)
+	}
+}
+
+// Проверку прервали: проба не состоялась — это ошибка, а не «сервер не ответил».
+func TestDirectReportsCancelledCheck(t *testing.T) {
+	dst, err := net.Listen("tcp", "127.0.0.1:0")
+	noErr(t, err)
+	defer dst.Close()
+	id := ProbeID{Proto: "tcp", Src: netip.MustParseAddrPort("127.0.0.1:0"), Dst: dst.Addr().(*net.TCPAddr).AddrPort()}
+	noBind := health.Binder(func(env.Iface) health.ControlFunc {
+		return func(string, string, syscall.RawConn) error { return nil }
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	n := NetProber{Bind: noBind, Timeout: time.Second}
+	ok, err := n.Direct(ctx, Service{Name: "http", Proto: "tcp", Port: id.Dst.Port()}, id, env.Iface{Name: "lo"})
+	if err == nil {
+		t.Fatalf("прерванная проверка: ждали ошибку, получили ответ=%v без ошибки", ok)
+	}
+}
+
+// Обычным путём: сокет без привязки; в запросе — имя сайта, а не адрес.
+func TestPlainAsksByHostName(t *testing.T) {
+	srv, err := net.Listen("tcp", "127.0.0.1:0")
+	noErr(t, err)
+	defer srv.Close()
+	request := make(chan string, 1)
+	go func() {
+		conn, err := srv.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 512)
+		n, _ := conn.Read(buf)
+		request <- string(buf[:n])
+		_, _ = conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
+	}()
+	port := srv.Addr().(*net.TCPAddr).AddrPort().Port()
+	n := NetProber{Timeout: 2 * time.Second}
+	s := Service{Name: "http", Proto: "tcp", Port: port, Host: "example.com"}
+	noErr(t, n.Plain(context.Background(), s, netip.MustParseAddr("127.0.0.1")))
+	eq(t, strings.Contains(<-request, "\r\nHost: example.com\r\n"), true)
 }
 
 // udpEcho — UDP-эхо на 127.0.0.1.

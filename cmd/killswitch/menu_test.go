@@ -64,7 +64,7 @@ func TestMenuElevatesWhenNotAdmin(t *testing.T) {
 	h := newHarness(t, baseConfig)
 	d, calls := h.menuDeps("1", "0"), 0
 	d.admin = func() bool { return false }
-	d.elevate = func() error { calls++; return nil }
+	d.elevate = func(command string) error { calls++; eq(t, command, ""); return nil }
 	eq(t, run(context.Background(), nil, d), exitOK)
 	eq(t, calls, 1)
 	eq(t, len(h.fb.Applies), 0)
@@ -74,7 +74,7 @@ func TestMenuElevationRefusedIsError(t *testing.T) {
 	h := newHarness(t, baseConfig)
 	d := h.menuDeps()
 	d.admin = func() bool { return false }
-	d.elevate = func() error { return errors.New("отменено пользователем") }
+	d.elevate = func(string) error { return errors.New("отменено пользователем") }
 	eq(t, run(context.Background(), nil, d), exitConfig)
 }
 
