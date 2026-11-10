@@ -65,10 +65,10 @@ on_exit() {
 trap on_exit EXIT
 "${SSH[@]}" "mkdir -p $REMOTE/bin $REMOTE/stub $REMOTE/stub-kill && chmod 700 $REMOTE"
 scp -q -o BatchMode=yes "$TMP/bin/kslab" "$TMP/bin/killswitch" "$TMP/bin/sing-box" "$TMP/bin/xray" "$TMP/bin/SHA256SUMS" "$HOST:$REMOTE/bin/"
-scp -q -o BatchMode=yes "$HERE/stub/systemctl" "$HOST:$REMOTE/stub/"
+scp -q -o BatchMode=yes "$HERE/stub/systemctl" "$HERE/stub/xdg-open" "$HOST:$REMOTE/stub/"
 scp -q -o BatchMode=yes "$HERE/stub-kill/nft" "$HOST:$REMOTE/stub-kill/"
 scp -q -o BatchMode=yes "$HERE/hostcheck.sh" "$HOST:$REMOTE/"
-"${SSH[@]}" "cd $REMOTE && chmod 755 bin/* stub/systemctl stub-kill/nft && cd bin && sha256sum -c SHA256SUMS && du -sh $REMOTE"
+"${SSH[@]}" "cd $REMOTE && chmod 755 bin/* stub/systemctl stub/xdg-open stub-kill/nft && cd bin && sha256sum -c SHA256SUMS && du -sh $REMOTE"
 "${SSH[@]}" "KSL_SERVICES='${KSL_SERVICES:-}' sh $REMOTE/hostcheck.sh; free -m | sed -n 2p" | tee "$OUT/host-pre.txt"
 "${SSH[@]}" "nft -s list ruleset 2>/dev/null" > "$OUT/nft-pre.txt"
 

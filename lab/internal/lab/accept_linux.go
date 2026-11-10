@@ -62,6 +62,7 @@ type acc struct {
 	cgRel   string
 	cgDir   *os.File
 	results string
+	chkCode int // код команды check под on (сценарий 9): с ним сверяется проверка через окно
 }
 
 // Accept — подкоманда accept: все сценарии для одного клиента; итог — results.json и report.txt в каталоге прогона.
@@ -317,7 +318,8 @@ func (a *acc) all() error {
 		scn, name string
 		f         func() error
 	}{
-		{"1", "baseline", a.baseline}, {"1", "1", a.s1}, {"3", "3 LAN", a.s3open}, {"9", "9 и 10", a.s9}, {"5", "5", a.s5},
+		{"1", "baseline", a.baseline}, {"1", "1", a.s1}, {"3", "3 LAN", a.s3open}, {"9", "9 и 10", a.s9},
+		{ScenarioWindow, "окно", a.gui}, {"5", "5", a.s5},
 		{"6", "6", a.s6}, {"2", "2", a.s2}, {"4", "4", a.s4}, {"3", "3 tunnel-up и r6-зомби", a.s3tunnelUp}, {"7", "7", a.s7},
 		{"2", "strict: 2, (а), (г), r6-маршрут", a.strict}, {"8", "8", a.s8},
 	}
@@ -976,6 +978,7 @@ func (a *acc) s3open() error {
 
 func (a *acc) s9() error {
 	out, code := a.ks("check")
+	a.chkCode = code
 	if a.c.Redirect {
 		// При перенаправлении клиента: 0 или 5 по правилам, но не ложный LEAK.
 		ok := RedirectCheckOK(out, code)
