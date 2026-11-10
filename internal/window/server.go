@@ -22,7 +22,7 @@ import (
 	"github.com/DuchitskyDA/killswitch/internal/ui"
 )
 
-// dist — собранная страница окна; до сборки в каталоге лежит заглушка index.html.
+// dist — собранная страница окна; исходники — web/, сборка — npm run build.
 //
 //go:embed dist
 var dist embed.FS

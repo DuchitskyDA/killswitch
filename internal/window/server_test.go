@@ -340,11 +340,11 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 }
 
-func TestPageIsEmbeddedStub(t *testing.T) {
+func TestPageIsEmbedded(t *testing.T) {
 	p := opened(t, &fakeActions{})
 	w := p.get("/")
 	eq(t, w.Code, http.StatusOK)
-	eq(t, strings.Contains(w.Body.String(), "страница окна не собрана"), true)
+	eq(t, strings.Contains(w.Body.String(), `<div id="app">`), true)
 	eq(t, p.get("/nothing.js").Code, http.StatusNotFound)
 }
 
