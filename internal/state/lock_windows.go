@@ -8,10 +8,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// lockSDDL — доступ к mutex только SYSTEM и Администраторам. Без явного дескриптора mutex,
-// созданный службой (SYSTEM), получает DACL по умолчанию её токена: Администраторам — только
-// чтение, и CLI администратора получает Access is denied, пока служба держит объект.
-const lockSDDL = "D:P(A;;GA;;;SY)(A;;GA;;;BA)"
+// lockSDDL — доступ к mutex SYSTEM, Администраторам и владельцу объекта. Без явного дескриптора
+// mutex, созданный службой (SYSTEM), получает DACL по умолчанию её токена: Администраторам — только
+// чтение, и CLI администратора получает Access is denied, пока служба держит объект. Владелец (OW)
+// нужен, чтобы повторный захват тем же пользователем без повышения давал «занято», а не отказ.
+const lockSDDL = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;OW)"
 
 // LockName — имя именованного mutex в Global\ (dir не нужен).
 func LockName(string) string { return `Global\killswitch` }
