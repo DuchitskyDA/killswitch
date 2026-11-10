@@ -78,7 +78,8 @@ macOS — LaunchDaemon. Он пересчитывает правила раз в
 `SHA256SUMS`. Скачайте файл своей ОС — `killswitch-<ос>-<арх>` — и `SHA256SUMS`, сверьте сумму:
 
 - Linux: `sha256sum -c --ignore-missing SHA256SUMS`;
-- macOS: `shasum -a 256 killswitch-darwin-arm64` — строка должна совпасть со строкой этого файла в `SHA256SUMS`;
+- macOS: `shasum -a 256 killswitch-darwin-arm64` (на Intel — `killswitch-darwin-amd64`) — строка должна совпасть со
+  строкой этого файла в `SHA256SUMS`;
 - Windows (PowerShell): `(Get-FileHash .\killswitch-windows-amd64.exe -Algorithm SHA256).Hash` — значение должно
   совпасть без учёта регистра с суммой этого файла в `SHA256SUMS`; так же сверьте `menu.ps1`.
 
