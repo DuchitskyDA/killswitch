@@ -8,9 +8,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// elevateFunc: повышения нет — меню и окно просят запустить через sudo.
-var elevateFunc func(command string) error
-
 // isAdmin — процесс работает от root.
 func isAdmin() bool { return os.Geteuid() == 0 }
 

@@ -1,10 +1,12 @@
-# CI killswitch: формат и vet, юнит- и эталонные тесты на трёх ОС, релизные бинарники с sha256 (артефакт, без Release),
-# живые сценарии на одноразовых раннерах Windows и macOS. Правила WFP и pf ставятся только на этих ВМ.
+# CI killswitch: формат и vet, юнит- и эталонные тесты на трёх ОС, релизные бинарники и killswitch.app (zip) с sha256
+# (артефакт, без Release), живые сценарии на одноразовых раннерах Windows и macOS, там же установка cask из локального
+# tap. Правила WFP и pf ставятся только на этих ВМ.
 name: ci
 
 on:
   push:
     branches: [universal, main]
+    tags: ['v*']
   pull_request:
     branches: [universal, main]
   workflow_dispatch:
@@ -40,7 +42,11 @@ jobs:
           echo "== vet windows wfplive"; GOOS=windows go vet -tags wfplive ./...
           echo "== vet darwin darwinlive"; GOOS=darwin go vet -tags darwinlive ./...
       - name: sh -n
-        run: for f in ci/darwin/*.sh; do sh -n "$f" && echo "ok $f"; done
+        run: |
+          set -e
+          for f in ci/darwin/*.sh; do sh -n "$f" && echo "ok $f"; done
+      - name: ruby -c (cask)
+        run: ruby -c dist/homebrew/killswitch.rb
 
   test:
     strategy:
@@ -83,26 +89,31 @@ jobs:
           git add --all ../internal/window/dist
           git diff --cached --exit-code -- ../internal/window/dist
 
+  # macOS: killswitch.app подписывается ad-hoc целиком (codesign) и пакуется ditto — с битами и структурой бандла.
   release:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    runs-on: macos-15
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
-      - name: build x5
+      - name: build x5, killswitch.app (arm64, amd64)
         env:
           CGO_ENABLED: '0'
         run: |
           set -e
+          version=0.0.0
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version=${GITHUB_REF_NAME#v}; fi
           mkdir -p dist/release
           for t in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64; do
             os=${t%/*}; arch=${t#*/}; ext=; [ "$os" = windows ] && ext=.exe
             GOOS=$os GOARCH=$arch go build -trimpath -ldflags='-s -w' -o "dist/release/killswitch-$os-$arch$ext" ./cmd/killswitch
           done
-          cp dist/windows/menu.ps1 dist/release/menu.ps1
-          cd dist/release && sha256sum killswitch-* menu.ps1 > SHA256SUMS && cat SHA256SUMS
+          for arch in arm64 amd64; do
+            sh ci/darwin/app.sh "dist/release/killswitch-darwin-$arch" "$version" "dist/release/killswitch-darwin-$arch.zip"
+          done
+          cd dist/release && shasum -a 256 killswitch-* > SHA256SUMS && cat SHA256SUMS
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: killswitch-${{ github.sha }}
@@ -190,7 +201,7 @@ jobs:
           WG_SHA256: '76fcec042c5989c5b816cd32eaed1e5b1c3b998a4b1c9eca55f299e3314ef7e4'
         run: ./ci/windows/wgnt.ps1
 
-      - name: installer (menu.ps1)
+      - name: installer (setup)
         if: success() || failure()
         timeout-minutes: 5
         run: ./ci/windows/install.ps1
@@ -214,6 +225,7 @@ jobs:
           path: out/
 
   live-darwin:
+    needs: release
     strategy:
       fail-fast: false
       matrix:
@@ -228,6 +240,10 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: killswitch-${{ github.sha }}
+          path: release
 
       - name: build
         timeout-minutes: 5
@@ -264,6 +280,12 @@ jobs:
         if: always()
         timeout-minutes: 2
         run: sudo sh -c '. /private/tmp/ks-ci/lib.sh; reset_all final; disarm_watchdog; pfctl -s info | head -1; pfctl -s References'
+
+      # Cask из выпуска: локальный tap, url file:// на zip из job release (не пересборка). Окно с паролем не проверяется.
+      - name: cask (local tap, file://)
+        if: success() || failure()
+        timeout-minutes: 10
+        run: sh ci/darwin/cask_live.sh release
 
       - name: results
         if: always()

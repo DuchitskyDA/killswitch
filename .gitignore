@@ -1,5 +1,6 @@
 /dist/*
-!/dist/windows/
+!/dist/macos/
+!/dist/homebrew/
 /.lab-tmp/
 *.exe
 /.tmp/
