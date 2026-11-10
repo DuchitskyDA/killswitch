@@ -1,0 +1,43 @@
+# killswitch wfp: 42 фильтров
+persistent connect-v4 permit w=10 soft app-id=="\\device\\harddiskvolume3\\program files\\happ\\happ.exe"
+persistent connect-v4 permit w=10 soft local-iface==1689399632478208
+persistent connect-v4 permit w=10 soft local-port==68 proto==17 remote-port==67
+persistent connect-v4 permit w=10 soft loopback
+persistent connect-v4 permit w=10 soft proto==17 proto==6 remote-addr==10.0.0.0/8 remote-addr==168.63.129.16/32 remote-addr==169.254.0.0/16 remote-addr==172.16.0.0/12 remote-addr==192.168.0.0/16 remote-port==53
+persistent connect-v4 permit w=10 soft remote-addr==10.0.0.0/8 remote-addr==169.254.0.0/16 remote-addr==172.16.0.0/12 remote-addr==192.168.0.0/16 remote-addr==224.0.0.251/32 remote-addr==224.0.0.252/32 remote-port!=53
+persistent connect-v4 block w=1 hard
+persistent connect-v6 permit w=10 soft app-id=="\\device\\harddiskvolume3\\program files\\happ\\happ.exe"
+persistent connect-v6 permit w=10 soft local-iface==1689399632478208
+persistent connect-v6 permit w=10 soft local-port==546 proto==17 remote-port==547
+persistent connect-v6 permit w=10 soft loopback
+persistent connect-v6 permit w=10 soft proto==17 proto==6 remote-addr==fc00::/7 remote-addr==fe80::/10 remote-addr==fe80::1/128 remote-port==53
+persistent connect-v6 permit w=10 soft remote-addr==fc00::/7 remote-addr==fe80::/10 remote-addr==ff02::1:3/128 remote-addr==ff02::fb/128 remote-port!=53
+persistent connect-v6 block w=1 hard
+persistent accept-v4 permit w=10 soft app-id=="\\device\\harddiskvolume3\\program files\\happ\\happ.exe"
+persistent accept-v4 permit w=10 soft local-iface==1689399632478208
+persistent accept-v4 permit w=10 soft local-port==68 proto==17 remote-port==67
+persistent accept-v4 permit w=10 soft loopback
+persistent accept-v4 permit w=10 soft remote-addr==10.0.0.0/8 remote-addr==169.254.0.0/16 remote-addr==172.16.0.0/12 remote-addr==192.168.0.0/16 remote-addr==224.0.0.251/32 remote-addr==224.0.0.252/32 remote-port!=53
+persistent accept-v4 block w=1 hard
+persistent accept-v6 permit w=10 soft app-id=="\\device\\harddiskvolume3\\program files\\happ\\happ.exe"
+persistent accept-v6 permit w=10 soft local-iface==1689399632478208
+persistent accept-v6 permit w=10 soft local-port==546 proto==17 remote-port==547
+persistent accept-v6 permit w=10 soft loopback
+persistent accept-v6 permit w=10 soft remote-addr==fc00::/7 remote-addr==fe80::/10 remote-addr==ff02::1:3/128 remote-addr==ff02::fb/128 remote-port!=53
+persistent accept-v6 block w=1 hard
+boottime connect-v4 permit w=10 soft local-port==68 proto==17 remote-port==67
+boottime connect-v4 permit w=10 soft loopback
+boottime connect-v4 block w=1 hard
+boottime connect-v6 permit w=10 soft local-port==546 proto==17 remote-port==547
+boottime connect-v6 permit w=10 soft loopback
+boottime connect-v6 block w=1 hard
+boottime accept-v4 permit w=10 soft local-port==68 proto==17 remote-port==67
+boottime accept-v4 permit w=10 soft loopback
+boottime accept-v4 block w=1 hard
+boottime accept-v6 permit w=10 soft local-port==546 proto==17 remote-port==547
+boottime accept-v6 permit w=10 soft loopback
+boottime accept-v6 block w=1 hard
+runtime connect-v4 permit w=20 soft
+runtime connect-v6 permit w=20 soft
+runtime accept-v4 permit w=20 soft
+runtime accept-v6 permit w=20 soft

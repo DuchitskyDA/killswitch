@@ -1,0 +1,15 @@
+#!/bin/sh
+# Заглушка systemctl приёмки: только пишет вызов. enable/disable меняют ссылки в /etc/systemd/system, а это внутри
+# mount ns лаборатории tmpfs — иначе отказ. Настоящий systemctl в приёмке не вызывается никогда.
+d=/etc/systemd/system
+[ "$(stat -f -c %T "$d")" = tmpfs ] || { echo "заглушка systemctl: $d не tmpfs" >&2; exit 1; }
+echo "systemctl $*" >> "${KSL_STUB_LOG:-/dev/null}"
+case "$1" in
+enable)
+	mkdir -p "$d/sysinit.target.wants" "$d/multi-user.target.wants"
+	ln -sf "$d/killswitch-early.service" "$d/sysinit.target.wants/killswitch-early.service"
+	ln -sf "$d/killswitch.service" "$d/multi-user.target.wants/killswitch.service" ;;
+disable)
+	rm -f "$d/sysinit.target.wants/killswitch-early.service" "$d/multi-user.target.wants/killswitch.service" ;;
+esac
+exit 0

@@ -1,0 +1,283 @@
+# CI killswitch: формат и vet, юнит- и эталонные тесты на трёх ОС, релизные бинарники с sha256 (артефакт, без Release),
+# живые сценарии на одноразовых раннерах Windows и macOS. Правила WFP и pf ставятся только на этих ВМ.
+name: ci
+
+on:
+  push:
+    branches: [universal, main]
+  pull_request:
+    branches: [universal, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.26.10'
+  SINGBOX_VERSION: '1.14.4'
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "не отформатировано:"; echo "$out"; exit 1; fi
+      - name: vet (linux, windows, darwin, live tags)
+        run: |
+          set -e
+          for os in linux windows darwin; do echo "== vet $os"; GOOS=$os go vet ./...; done
+          echo "== vet windows wfplive"; GOOS=windows go vet -tags wfplive ./...
+          echo "== vet darwin darwinlive"; GOOS=darwin go vet -tags darwinlive ./...
+      - name: sh -n
+        run: for f in ci/darwin/*.sh; do sh -n "$f" && echo "ok $f"; done
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: unit and golden tests
+        run: go test ./...
+
+  # Страница окна: проверка типов, тесты и сборка; собранное в internal/window/dist обязано совпадать с репозиторием.
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: svelte-check
+        run: npx svelte-check
+      - name: tests
+        run: npm test
+      - name: build
+        run: npm run build
+      - name: internal/window/dist совпадает с собранным
+        run: |
+          git add --all ../internal/window/dist
+          git diff --cached --exit-code -- ../internal/window/dist
+
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: build x5
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -e
+          mkdir -p dist/release
+          for t in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64; do
+            os=${t%/*}; arch=${t#*/}; ext=; [ "$os" = windows ] && ext=.exe
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags='-s -w' -o "dist/release/killswitch-$os-$arch$ext" ./cmd/killswitch
+          done
+          cp dist/windows/menu.ps1 dist/release/menu.ps1
+          cd dist/release && sha256sum killswitch-* menu.ps1 > SHA256SUMS && cat SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: killswitch-${{ github.sha }}
+          path: dist/release/
+          if-no-files-found: error
+
+  live-windows:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      KS: 'C:\ks'
+      KS_CONFIG: 'C:\ProgramData\killswitch\config.toml'
+      KS_BOOTKEYS: 'C:\ks\bootkeys.txt'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: build
+        timeout-minutes: 6
+        run: |
+          New-Item -ItemType Directory -Force "$env:KS\probe-allowed", "$env:KS\probe-denied", "$env:KS\probe-other", 'C:\ProgramData\killswitch' | Out-Null
+          go build -o "$env:KS\killswitch.exe" ./cmd/killswitch
+          if ($LASTEXITCODE) { throw "build: $LASTEXITCODE" }
+          go build -o "$env:KS\ksprobe.exe" ./ci/ksprobe
+          if ($LASTEXITCODE) { throw "build ksprobe: $LASTEXITCODE" }
+          go build -o "$env:KS\wfptool.exe" ./ci/wfptool
+          if ($LASTEXITCODE) { throw "build wfptool: $LASTEXITCODE" }
+          go test -tags wfplive -c -o "$env:KS\live.test.exe" ./internal/backend/windows
+          if ($LASTEXITCODE) { throw "build live: $LASTEXITCODE" }
+          foreach ($d in 'probe-allowed', 'probe-denied', 'probe-other') {
+            Copy-Item "$env:SystemRoot\System32\curl.exe", "$env:KS\ksprobe.exe" "$env:KS\$d\"
+          }
+
+      - name: fetch sing-box (pinned sha256)
+        timeout-minutes: 3
+        env:
+          SINGBOX_SHA256: '99185d75d314a07dbba4a130c8ad986cbeb629a07927975636b341ca61f991df'
+        run: |
+          $zip = "$env:KS\sing-box.zip"
+          Invoke-WebRequest "https://github.com/SagerNet/sing-box/releases/download/v$env:SINGBOX_VERSION/sing-box-$env:SINGBOX_VERSION-windows-amd64.zip" -OutFile $zip
+          $h = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if ($h -ne $env:SINGBOX_SHA256) { throw "sha256 mismatch: $h" }
+          Expand-Archive $zip "$env:KS\sbzip"
+          New-Item -ItemType Directory -Force "$env:KS\sb" | Out-Null
+          Copy-Item "$env:KS\sbzip\*\sing-box.exe" "$env:KS\sb\"
+          & "$env:KS\sb\sing-box.exe" version
+
+      - name: inventory, trust (runner by app-id) and watchdog
+        timeout-minutes: 2
+        run: |
+          "runner: $env:ImageOS $env:ImageVersion"
+          $nic = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric | Select-Object -First 1).InterfaceAlias
+          $resolver = @((Get-DnsClientServerAddress -InterfaceAlias $nic -AddressFamily IPv4).ServerAddresses)[0]
+          "KS_NIC=$nic" | Add-Content $env:GITHUB_ENV
+          "KS_RESOLVER=$resolver" | Add-Content $env:GITHUB_ENV
+          Get-NetAdapter | Format-Table Name, InterfaceDescription, ifIndex, Status -AutoSize | Out-String -Width 200
+          "nic=$nic resolver=$resolver"
+          $paths = @((Get-Process -Name 'Runner.*' -ErrorAction SilentlyContinue).Path)
+          $paths += Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue |
+            Where-Object { $_.RemoteAddress -notmatch '^(127\.|::1$)' } |
+            ForEach-Object { (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).Path }
+          $paths = $paths | Where-Object { $_ -and $_ -notmatch '\\svchost\.exe$' -and $_ -notlike "$env:KS\*" } | Sort-Object -Unique
+          "доверенные по app-id:"; $paths
+          $paths + "$env:KS\probe-allowed\curl.exe", "$env:KS\sb\sing-box.exe" |
+            ForEach-Object { "[[trust]]`nkind = 'program'`nvalue = '$_'`n" } | Set-Content "$env:KS\trust.toml"
+          $a = New-ScheduledTaskAction -Execute "$env:KS\killswitch.exe" -Argument 'uninstall'
+          $t = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(40)
+          Register-ScheduledTask -TaskName ks-ci-watchdog -Action $a -Trigger $t -User 'NT AUTHORITY\SYSTEM' -RunLevel Highest -Force | Out-Null
+
+      - name: live scenarios
+        timeout-minutes: 30
+        run: ./ci/windows/live.ps1
+
+      - name: WireGuardNT transport (driver tunnel without app-id)
+        if: success() || failure()
+        timeout-minutes: 8
+        env:
+          WG_VERSION: '0.5.3'
+          WG_SHA256: '76fcec042c5989c5b816cd32eaed1e5b1c3b998a4b1c9eca55f299e3314ef7e4'
+        run: ./ci/windows/wgnt.ps1
+
+      - name: installer (menu.ps1)
+        if: success() || failure()
+        timeout-minutes: 5
+        run: ./ci/windows/install.ps1
+
+      - name: cleanup
+        if: always()
+        timeout-minutes: 3
+        run: |
+          Stop-Service killswitch -Force -ErrorAction SilentlyContinue
+          sc.exe delete killswitch | Out-Null
+          & "$env:KS\killswitch.exe" uninstall
+          Get-Process sing-box, python -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Unregister-ScheduledTask -TaskName ks-ci-watchdog -Confirm:$false -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item "$env:KS\*.log", "$env:KS\*.json", "$env:KS\results.txt", $env:KS_CONFIG out/ -ErrorAction SilentlyContinue
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: live-windows
+          path: out/
+
+  live-darwin:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: build
+        timeout-minutes: 5
+        run: |
+          set -e
+          sudo mkdir -p /private/tmp/ks-ci/out
+          go build -o killswitch ./cmd/killswitch
+          go build -o ksprobe ./ci/ksprobe
+          go test -c -tags darwinlive -o live.test ./internal/backend/darwin
+          sudo cp killswitch ksprobe live.test ci/darwin/*.sh ci/targets.py /private/tmp/ks-ci/
+          id -u | sudo tee /private/tmp/ks-ci/runner_uid
+          sudo chmod -R a+rX /private/tmp/ks-ci
+
+      - name: fetch sing-box (pinned sha256)
+        timeout-minutes: 3
+        env:
+          SHA256_ARM64: '0d8c7f5ed5d587b0f1a5e9772a708ec3bfa4ac4c9329604b01d8d9c2ba406838'
+          SHA256_AMD64: 'eae86b9b033bba50b7c44ab719e4bfac0aca05efd28483390ed3aa510f32db25'
+        run: |
+          case "$(uname -m)" in arm64) arch=arm64; want=$SHA256_ARM64 ;; *) arch=amd64; want=$SHA256_AMD64 ;; esac
+          name="sing-box-$SINGBOX_VERSION-darwin-$arch"
+          curl -fsSL -o sb.tar.gz "https://github.com/SagerNet/sing-box/releases/download/v$SINGBOX_VERSION/$name.tar.gz"
+          got=$(shasum -a 256 sb.tar.gz | awk '{print $1}')
+          [ "$got" = "$want" ] || { echo "sha256 mismatch: $got"; exit 1; }
+          mkdir -p sb && tar -xzf sb.tar.gz -C sb
+          sudo cp "sb/$name/sing-box" /private/tmp/ks-ci/sing-box
+          /private/tmp/ks-ci/sing-box version
+
+      - name: live scenarios
+        timeout-minutes: 25
+        run: sudo sh /private/tmp/ks-ci/live.sh
+
+      - name: reset
+        if: always()
+        timeout-minutes: 2
+        run: sudo sh -c '. /private/tmp/ks-ci/lib.sh; reset_all final; disarm_watchdog; pfctl -s info | head -1; pfctl -s References'
+
+      - name: results
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.os }}"
+            echo '```'
+            sudo cat /private/tmp/ks-ci/out/results.txt 2>/dev/null || echo 'нет результатов'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p out && sudo cp -R /private/tmp/ks-ci/out/. out/ && sudo cp /var/log/killswitch.log out/ 2>/dev/null; sudo chown -R "$USER" out
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: live-darwin-${{ matrix.os }}
+          path: out/

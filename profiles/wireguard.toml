@@ -1,0 +1,26 @@
+# WireGuard: адаптер называется по имени туннеля.
+name = "wireguard"
+description = "WireGuard: адаптер WireGuard Tunnel / wg* / utun*"
+
+# Живые проверки: Linux — лаборатория в network namespace (lab/), сценарии 1–10 v4/v6 с этим профилем
+# (интерфейсы wg0/wg1, метка 0xca6c). Windows и macOS с этим профилем вживую не проверялись.
+verified_on = [
+  { os = "linux", backend = "nftables", client_version = "linux 6.17 (модуль ядра)", date = "2026-11-10" },
+]
+
+[windows]
+interfaces = ["WireGuard Tunnel*"]
+programs = ['C:\Program Files\WireGuard\wireguard.exe']
+detect = ['C:\Program Files\WireGuard\wireguard.exe']
+
+[linux]
+# Имя интерфейса = имя конфига wg-quick; другое имя задайте в конфиге: [tunnel] interfaces.
+interfaces = ["wg*"]
+# wg-quick ставит fwmark 51820 при Table=auto и маршруте 0/0 (если таблица занята — следующий номер).
+marks = ["0xca6c"]
+detect = ["/usr/bin/wg-quick"]
+
+[darwin]
+interfaces = ["utun*"]
+users = ["root"]
+detect = ["/opt/homebrew/bin/wg-quick", "/usr/local/bin/wg-quick"]

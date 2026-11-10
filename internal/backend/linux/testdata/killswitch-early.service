@@ -1,0 +1,16 @@
+# killswitch: правила до сети. Ставит "killswitch on", снимает "killswitch uninstall".
+[Unit]
+Description=killswitch: правила nftables до сети
+DefaultDependencies=no
+Before=network-pre.target
+Wants=network-pre.target
+After=nftables.service
+RequiresMountsFor=/var/lib/killswitch
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'nft -f /var/lib/killswitch/on.nft || nft -f /var/lib/killswitch/fallback.nft'
+
+[Install]
+WantedBy=sysinit.target

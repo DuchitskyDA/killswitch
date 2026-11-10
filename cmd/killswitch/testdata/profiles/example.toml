@@ -1,0 +1,21 @@
+# Фикстура тестов CLI: профиль в формате profiles/*.toml, в бинарник не встраивается.
+# Его detect ищет тот же wireguard.exe, что и встроенный профиль wireguard.
+name = "example"
+description = "Фикстура тестов: WireGuard с адаптером wg-example"
+
+verified_on = []
+
+[windows]
+interfaces = ["wg-example"]
+programs = ['C:\Program Files\WireGuard\wireguard.exe']
+detect = ['C:\Program Files\WireGuard\wireguard.exe']
+
+[linux]
+interfaces = ["wg-example"]
+users = ["root"]
+detect = ["/usr/bin/wg"]
+
+[darwin]
+interfaces = ["utun-example"]
+users = ["root"]
+detect = ["/Applications/WireGuard.app"]

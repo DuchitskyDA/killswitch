@@ -1,0 +1,27 @@
+# Hiddify: TUN держит служба HiddifyAdminBG. Новые сборки запускают в ней полное ядро (sing-tun без имени
+# интерфейса), старый мост — адаптер HiddifyAdminBg и выход через приложение.
+name = "hiddify"
+description = "Hiddify: адаптеры HiddifyAdminBg и sing-tun, программы каталога Hiddify"
+
+verified_on = []
+
+[windows]
+interfaces = ["HiddifyAdminBg", "sing-tun Tunnel*"]
+programs = [
+  'C:\Program Files\Hiddify\*.exe',
+  'C:\Program Files\Hiddify\core\*.exe',
+]
+detect = ['C:\Program Files\Hiddify\Hiddify.exe']
+
+[linux]
+interfaces = ["HiddifyAdminBg", "tun*"]
+# Полное ядро работает в службе от root. В режиме моста к серверу ходит приложение от пользователя
+# рабочего стола: тогда задайте его в конфиге ([[trust]] kind = "user").
+users = ["root"]
+detect = ["/usr/share/applications/hiddify.desktop"]
+
+[darwin]
+interfaces = ["utun*"]
+# Сборки без Network Extension запускают ядро в службе launchd от root.
+users = ["root"]
+detect = ["/Applications/Hiddify.app"]

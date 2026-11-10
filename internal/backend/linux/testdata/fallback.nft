@@ -1,0 +1,9 @@
+table inet killswitch
+delete table inet killswitch
+table inet killswitch {
+	chain postrouting {
+		type filter hook postrouting priority filter - 10; policy drop;
+		oifname "lo" accept
+		meta iiftype != loopback fib saddr type != local accept
+	}
+}

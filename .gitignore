@@ -1,3 +1,5 @@
-/dist/
+/dist/*
+!/dist/windows/
 /.lab-tmp/
 *.exe
+/.tmp/
