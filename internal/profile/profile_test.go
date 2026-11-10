@@ -11,7 +11,7 @@ import (
 func TestEmbeddedProfilesLoad(t *testing.T) {
 	m, err := Load(profiles.FS)
 	noErr(t, err)
-	_, ok := m["example"].Section("linux")
+	_, ok := m["wireguard"].Section("linux")
 	eq(t, ok, true)
 }
 

@@ -48,7 +48,8 @@ func TestEnforceNewBootFromOffGoesOn(t *testing.T) {
 }
 
 func TestEnforceNewBootFromRepairGoesOn(t *testing.T) {
-	h := newHarness(t, baseConfig)
+	h := newHarness(t, repairConfig)
+	h.fb.Env.Programs[blockedExe] = []string{blockedExe}
 	eq(t, h.run("repair"), exitOK)
 	h.fb.Env.BootID = "boot-2"
 	noErr(t, h.reconcile(env.HealthUnknown))

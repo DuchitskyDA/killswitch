@@ -25,7 +25,7 @@ type Intent struct {
 	PlanHash string      `json:"plan_hash"`
 }
 
-// State — содержимое state.json (рев. 4 B3).
+// State — содержимое state.json.
 type State struct {
 	Gen         uint64                  `json:"gen"`
 	Mode        policy.Mode             `json:"mode"`

@@ -13,7 +13,7 @@ import (
 	"github.com/DuchitskyDA/killswitch/internal/state"
 )
 
-// transition — команды on, off, repair (рев. 4 B3). off и repair — до перезагрузки: после неё enforce вернёт on.
+// transition — команды on, off, repair. off и repair — до перезагрузки: после неё enforce вернёт on.
 func (a *app) transition(target policy.Mode) error {
 	release, err := a.withLock()
 	if err != nil {

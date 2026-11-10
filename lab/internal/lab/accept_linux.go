@@ -703,7 +703,7 @@ func (a *acc) proxyServer(name string, cfg []byte, port uint16) error {
 // upOpts — вариант запуска клиента.
 type upOpts struct {
 	noMark bool // WireGuard без fwmark (вопрос (г))
-	direct bool // sing-box с правилом прямого маршрута (рев. 6)
+	direct bool // sing-box с правилом прямого маршрута
 }
 
 // up поднимает клиента туннеля с интерфейсом iface.
@@ -977,7 +977,7 @@ func (a *acc) s3open() error {
 func (a *acc) s9() error {
 	out, code := a.ks("check")
 	if a.c.Redirect {
-		// При перенаправлении клиента (решения владельца по ks-probe): 0 или 5 по правилам, но не ложный LEAK.
+		// При перенаправлении клиента: 0 или 5 по правилам, но не ложный LEAK.
 		ok := RedirectCheckOK(out, code)
 		detail := fmt.Sprintf("код %d; %s", code, strings.Join(grepLines(out, "LEAK|INCONCLUSIVE|SKIPPED c0|итог"), " | "))
 		a.expect("9", "-", "check под on при auto_redirect: 0 или 5, без ложного LEAK", ok, detail)
@@ -1038,7 +1038,7 @@ func (a *acc) egressCount(port uint16) int64 {
 	return n
 }
 
-// noDefaultRoute — (в) ks-probe: физический интерфейс с адресами, но без маршрута по умолчанию (как vEthernet (nat)
+// noDefaultRoute — физический интерфейс с адресами, но без маршрута по умолчанию (как vEthernet (nat)
 // или docker0), check пропускает с пометкой; итог не меняется.
 func (a *acc) noDefaultRoute(want int) {
 	cl := a.ns[topo.ClientNS]
@@ -1241,7 +1241,7 @@ func (a *acc) s3tunnelUp() error {
 	})
 	upDetail := fmt.Sprintf("%v за %s", errUp, time.Since(t0).Round(time.Second))
 	if a.c.Redirect && errUp != nil {
-		// Решение владельца «Описать ограничение»: при auto_redirect маршрут к dns.health идёт через физику (перехват —
+		// Ограничение (описано в README): при auto_redirect маршрут к dns.health идёт через физику (перехват —
 		// nft), Gate здоровья не проходит, tunnel-up не поднимается.
 		a.add("3", "-", "tunnel-up: здоровье up закрыло DNS к LAN", NotTested,
 			"ограничение, описано: при sing-box auto_redirect tunnel-up не поднимается; "+upDetail)
@@ -1359,7 +1359,7 @@ func (a *acc) s7() error {
 }
 
 // strict — сценарий 2 в strict и проверки клиента: (г) WireGuard без fwmark, (а) метка cgroup на conntrack,
-// рев. 6 прямой маршрут sing-box.
+// Прямой маршрут sing-box.
 func (a *acc) strict() error {
 	o := ConfigOpts{Strict: true, CgroupPath: a.cgRel}
 	if a.c.Cgroup {
@@ -1478,7 +1478,7 @@ func (a *acc) foreignDrops() (uint64, bool) {
 	return sum, len(m) > 0
 }
 
-// directRoute — рев. 6: правило клиента «HTTP «интернета» v4 → direct». compat — проходит мимо туннеля от доверенного
+// directRoute — правило клиента «HTTP «интернета» v4 → direct». compat — проходит мимо туннеля от доверенного
 // root (так устроен compat); strict — отброшено (доверенный только к endpoints), утечки нет.
 func (a *acc) directRoute(strict ConfigOpts) {
 	p := ServiceProbes[0]

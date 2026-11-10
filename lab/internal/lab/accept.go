@@ -35,7 +35,7 @@ type Check struct {
 	Log      string `json:"log,omitempty"`
 }
 
-// Scenarios — порядок строк таблицы: живые сценарии эпика, 10 (enforce восстанавливает), рев. 6 и открытые вопросы ks-linux.
+// Scenarios — порядок строк таблицы: живые сценарии 1–9, 10 (enforce восстанавливает), прямой маршрут, «зомби-туннель» и проверки (а)–(г).
 var Scenarios = []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "r6-маршрут", "r6-зомби", "(а)", "(б)", "(в)", "(г)", ScenarioNoDefault}
 
 // Cell — итог ячейки таблицы.
@@ -308,7 +308,7 @@ func StripTable(listing, name string) string {
 }
 
 // SingBoxClient — клиент sing-box для приёмки: TUN iface → shadowsocks 2022. redirect — auto_route + auto_redirect
-// (маршруты и nft ставит сам sing-box); direct — правило «HTTP «интернета» v4 → direct» (рев. 6: прямой маршрут).
+// (маршруты и nft ставит сам sing-box); direct — правило «HTTP «интернета» v4 → direct» (прямой маршрут).
 func SingBoxClient(password, iface string, redirect, direct bool) ([]byte, error) {
 	tun := map[string]any{
 		"type": "tun", "tag": "tun-in", "interface_name": iface,
@@ -353,10 +353,10 @@ func XrayClient(password, iface string) ([]byte, error) {
 	}, "", "  ")
 }
 
-// ScenarioNoDefault — ks-probe (в): физический интерфейс без маршрута по умолчанию check пропускает с пометкой.
+// ScenarioNoDefault — физический интерфейс без маршрута по умолчанию check пропускает с пометкой.
 const ScenarioNoDefault = "без default"
 
-// RedirectCheckOK — (б): при перенаправлении клиента (sing-box auto_redirect) check даёт 0 или 5 по правилам ks-probe
+// RedirectCheckOK — (б): при перенаправлении клиента (sing-box auto_redirect) check даёт 0 или 5 по правилам check
 // (перехваченная проба — SKIPPED, baseline без маршрута через туннель — INCONCLUSIVE), но не ложный LEAK.
 func RedirectCheckOK(out string, code int) bool {
 	if code != 0 && code != 5 {

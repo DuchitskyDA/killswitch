@@ -1,6 +1,6 @@
 // kslab — раннер лаборатории киллсвитча в Linux network namespace.
 //
-//	kslab run [--dir /opt/killswitch-lab] [--tunnels wireguard,sing-box,xray]   спайк волны 0: наивная политика nft
+//	kslab run [--dir /opt/killswitch-lab] [--tunnels wireguard,sing-box,xray]   первый прогон: наивная политика nft
 //	kslab accept --client wireguard|sing-box|sing-box-ar|xray [--dir …]        живая приёмка против настоящего killswitch
 //	kslab summary results-*.json                                              сводная таблица прогонов (любая ОС)
 //	kslab cleanup

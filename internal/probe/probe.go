@@ -1,4 +1,4 @@
-// Package probe — контракт и общая логика check (рев. 4 B5, рев. 5): пробы, свидетельства и итог.
+// Package probe — контракт и общая логика check: пробы, свидетельства и итог.
 package probe
 
 import (
@@ -27,7 +27,7 @@ type ProbeResult struct {
 // StructuralFinding — структурная утечка без пробы: WFP-ничья, pf-сосед или quick выше якоря,
 // якорь недостижим, pf выключен. Любая — итог LEAK.
 // Repair — повторный Apply того же плана её устраняет (pf выключен, токен потерян, нет anchor-точки):
-// enforce применяет заново. Без Repair (чужое quick-правило, сосед, WFP-ничья) — только LEAK, по решению владельца.
+// enforce применяет заново. Без Repair (чужое quick-правило, сосед, WFP-ничья) — только LEAK.
 type StructuralFinding struct {
 	Kind, Detail string
 	Repair       bool

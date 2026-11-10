@@ -14,7 +14,7 @@ type Capabilities struct {
 	Repair    bool
 }
 
-// CapabilitiesFor — возможности по ОС (рев. 2): одно место решения для всех backend.
+// CapabilitiesFor — возможности по ОС: одно место решения для всех backend.
 func CapabilitiesFor(goos string) Capabilities {
 	switch goos {
 	case "windows":

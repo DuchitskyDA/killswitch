@@ -165,7 +165,7 @@ func (b *Backend) finish(rules Rules) error {
 		if err := b.ensureToken(); err != nil {
 			return err
 		}
-		// Решение владельца «Сбрасывать все» (рев. 4 B2): состояния чужих keep-state правил обходят наш якорь.
+		// Сбрасываются все состояния pf: состояния чужих keep-state правил обходят наш якорь.
 		// Наши pass без состояния, поэтому разрешённые потоки сброс не рвёт.
 		if _, err := b.pf("", "-F", "states"); err != nil {
 			return fmt.Errorf("сброс состояний pf: %w", err)
@@ -231,7 +231,7 @@ func (b *Backend) failClosed(prior priorSet, cause error) error {
 const blockAllText = headerMode + "on\npass out quick on lo0 all no state\nblock return out quick all\n"
 
 // ensureAnchorPoint: в основном наборе нет `anchor "com.apple/*"` — вернуть /etc/pf.conf (как старый скрипт).
-// Чужое правило выше якоря не трогаем: это только LEAK (решение владельца «А»).
+// Чужое правило выше якоря не трогаем: это только LEAK.
 func (b *Backend) ensureAnchorPoint() error {
 	main, err := b.pf("", "-sr")
 	if err != nil {
@@ -422,7 +422,7 @@ func (b *Backend) Status() (backend.Status, error) {
 	return s, err
 }
 
-// structural — находки рев. 3. Repair=true устраняет повторный Apply; без Repair — только LEAK (решение «А»).
+// structural — структурные находки. Repair=true устраняет повторный Apply; без Repair — только LEAK.
 func (b *Backend) structural(consistent, enabled, token bool) ([]probe.StructuralFinding, bool, error) {
 	var f []probe.StructuralFinding
 	add := func(kind, detail string, repair bool) {
@@ -542,7 +542,7 @@ func (b *Backend) BeforeProbe(id probe.ProbeID) error {
 	return nil
 }
 
-// Evidence: счётчик block-правила порта-источника пробы вырос — пробу отбросило наше правило (рев. 5).
+// Evidence: счётчик block-правила порта-источника пробы вырос — пробу отбросило наше правило.
 func (b *Backend) Evidence(id probe.ProbeID, _ time.Time) (bool, error) {
 	key := probeKey(id)
 	b.mu.Lock()

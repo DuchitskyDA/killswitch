@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Разбор вывода pfctl. Форматы сверены со спайком (ks-spike-pf.md, прогон 42623686584).
+// Разбор вывода pfctl. Форматы сверены с выводом pfctl на раннерах macOS 15 и 26.
 
 // pfEnabled: `pfctl -s info` → строка "Status: Enabled …".
 func pfEnabled(info string) bool {

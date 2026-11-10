@@ -1,5 +1,5 @@
 # Живые сценарии WFP на одноразовом раннере windows-2025 (ci.yml, live-windows). Итог — строки RESULT S<n>.<id>;
-# любой FAIL — исключение в конце. Сценарии — «Живые сценарии» эпика 1–9 и 10 (восстановление после чужого снятия).
+# любой FAIL — исключение в конце. Сценарии 1–10 (README, «Что проверено вживую»; 10 — восстановление после чужого снятия).
 . "$PSScriptRoot\lib.ps1"
 "| id | итог | деталь |`n|---|---|---|" | Add-Content $env:GITHUB_STEP_SUMMARY
 $nic = $env:KS_NIC
@@ -36,7 +36,7 @@ if (Get-NetRoute -DestinationPrefix '::/0' -ErrorAction SilentlyContinue | Where
 $nat = Get-NetAdapter -Name 'vEthernet (nat)' -ErrorAction SilentlyContinue
 if ($nat) {
     # Второй «физический» адаптер раннера — Hyper-V NAT без маршрута по умолчанию: check пропускает его пробы с
-    # пометкой (SKIPPED, ks-probe (в)) и итог считает по остальным — код 0. Адаптер не выключается.
+    # пометкой (SKIPPED «нет маршрута по умолчанию») и итог считает по остальным — код 0. Адаптер не выключается.
     $out = & $KsExe check 2>&1 | Out-String; $code = $LASTEXITCODE; Write-Host $out
     Check 'S9.check-with-nat-adapter' ($code -eq 0 -and $out -match 'SKIPPED vEthernet \(nat\) v4 ') `
         "check при vEthernet (nat): код $code (ждали 0), SKIPPED по адаптеру без маршрута по умолчанию"

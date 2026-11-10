@@ -1,4 +1,4 @@
-// Package darwin — backend macOS: pf-якорь com.apple/000.killswitch (рев. 3), LaunchDaemon-наблюдатель.
+// Package darwin — backend macOS: pf-якорь com.apple/000.killswitch, LaunchDaemon-наблюдатель.
 package darwin
 
 import (
@@ -34,7 +34,7 @@ type Rules struct {
 // Render — детерминированный текст якоря.
 func (r Rules) Render() string { return r.Text }
 
-// probeLabel — label block-правила пробы: его счётчик — свидетельство отброса (рев. 5).
+// probeLabel — label block-правила пробы: его счётчик — свидетельство отброса.
 func probeLabel(proto string, port uint16) string {
 	return fmt.Sprintf("killswitch-probe-%s-%d", proto, port)
 }
@@ -101,7 +101,7 @@ func renderTunnel(w *writer, p policy.Policy, e env.Env) {
 	}
 }
 
-// renderTrust — доверенные пользователи: pf знает владельца только у TCP и UDP (рев. 6),
+// renderTrust — доверенные пользователи: pf знает владельца только у TCP и UDP,
 // поэтому ICMP и фрагменты доверенного блокируются.
 func renderTrust(w *writer, p policy.Policy, e env.Env) {
 	if len(p.Trust) == 0 {
@@ -145,7 +145,7 @@ func endpointAddrs(ep policy.Endpoint, e env.Env) []netip.Addr {
 	return sortedAddrs(e.Resolved[ep.Host])
 }
 
-// renderDNS — TCP/UDP 53 на физике по матрице A11 стоят выше LAN: LAN сам по себе 53 не открывает.
+// renderDNS — TCP/UDP 53 на физике по матрице DNSPermits стоят выше LAN: LAN сам по себе 53 не открывает.
 func renderDNS(w *writer, p policy.Policy, e env.Env) {
 	d := p.DNSPermits(e.Health == env.HealthUp)
 	w.line("# DNS (TCP и UDP 53): режим %s, туннель %s", p.DNS, healthWord(e.Health))
@@ -161,7 +161,7 @@ func renderDNS(w *writer, p policy.Policy, e env.Env) {
 	w.line("block return out quick proto { tcp udp } from any to any port 53")
 }
 
-// renderProbes — block-правила портов-источников проб с label (рев. 5): счётчик label — свидетельство отброса.
+// renderProbes — block-правила портов-источников проб с label: счётчик label — свидетельство отброса.
 func renderProbes(w *writer) {
 	for port := probe.SrcPortFirst; port <= probe.SrcPortLast; port++ {
 		for _, proto := range []string{"tcp", "udp"} {

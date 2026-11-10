@@ -5,5 +5,5 @@ import (
 	"github.com/DuchitskyDA/killswitch/internal/backend/darwin"
 )
 
-// newBackend подключает pf-backend macOS. Файл принадлежит тикету ks-darwin.
+// newBackend подключает pf-backend macOS.
 func newBackend() (backend.Backend, error) { return darwin.New(), nil }

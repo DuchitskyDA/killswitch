@@ -5,5 +5,5 @@ import (
 	"github.com/DuchitskyDA/killswitch/internal/backend/linux"
 )
 
-// newBackend подключает backend nftables. Файл принадлежит тикету ks-linux.
+// newBackend подключает backend nftables.
 func newBackend() (backend.Backend, error) { return linux.New(), nil }

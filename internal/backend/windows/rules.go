@@ -1,5 +1,5 @@
 // Package windows — backend WFP: свой persistent provider и sublayer (вес 0xFFFF), block по умолчанию на слоях
-// ALE_AUTH_CONNECT/RECV_ACCEPT v4/v6 и permit-фильтры по политике (рев. 3–5 эпика).
+// ALE_AUTH_CONNECT/RECV_ACCEPT v4/v6 и permit-фильтры по политике.
 //
 // Файлы без суффикса _windows — модель фильтров, план и его текст: чистые, собираются и тестируются на любой ОС.
 package windows
@@ -41,7 +41,7 @@ const (
 	Permit Action = "permit"
 )
 
-// Веса фильтров внутри нашего sublayer (рев. 3, рев. 5): block-repair 30 → permit-all 20 → permit 10 → block 1.
+// Веса фильтров внутри нашего sublayer: block-repair 30 → permit-all 20 → permit 10 → block 1.
 const (
 	WeightBlock       uint64 = 1
 	WeightPermit      uint64 = 10

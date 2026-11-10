@@ -43,7 +43,7 @@ func unique(fs []Filter) []Filter {
 	return out
 }
 
-// noSvchost: svchost по app-id не разрешается никогда (рев. 3) — ошибка конфига.
+// noSvchost: svchost по app-id не разрешается никогда — ошибка конфига.
 func noSvchost(p policy.Policy, e env.Env) error {
 	for _, t := range p.Trust {
 		if t.Kind != policy.KindProgram {
@@ -97,7 +97,7 @@ func bootFilters(l Layer) []Filter {
 	}
 }
 
-// overlay — НЕ-persistent надстройка off/repair: исчезает при перезагрузке (рев. 4 B3).
+// overlay — НЕ-persistent надстройка off/repair: исчезает при перезагрузке.
 func overlay(p policy.Policy, e env.Env, l Layer) []Filter {
 	if p.Mode == policy.ModeOn {
 		return nil
@@ -216,7 +216,7 @@ func protoNum(p policy.Proto) uint8 {
 	return ProtoUDP
 }
 
-// lanConds — LAN-диапазоны и mDNS/LLMNR семейства слоя, кроме порта 53: LAN сам по себе DNS не открывает (рев. 3).
+// lanConds — LAN-диапазоны и mDNS/LLMNR семейства слоя, кроме порта 53: LAN сам по себе DNS не открывает.
 func lanConds(l Layer) []Cond {
 	var out []Cond
 	for _, pfx := range append(append([]netip.Prefix{}, policy.LANPrefixes...), policy.LANMulticast...) {
@@ -230,7 +230,7 @@ func lanConds(l Layer) []Cond {
 	return append(out, Cond{Field: FieldRemotePort, Op: OpNeq, Port: 53})
 }
 
-// dnsConds — TCP/UDP 53 на исходящем слое по матрице DNSPermits (рев. 4 A11, рев. 5).
+// dnsConds — TCP/UDP 53 на исходящем слое по матрице DNSPermits.
 func dnsConds(p policy.Policy, e env.Env, l Layer) []Cond {
 	if !l.Connect() {
 		return nil

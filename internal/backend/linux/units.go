@@ -3,7 +3,7 @@ package linux
 // unit — systemd-юнит: имя, файл, ссылка включения и текст. Ставит Apply, снимает Remove.
 type unit struct{ name, file, wants, text string }
 
-// units: [0] — ранний набор до сети (рев. 2 A3), [1] — наблюдатель enforce.
+// units: [0] — ранний набор до сети, [1] — наблюдатель enforce.
 var units = []unit{
 	{
 		name:  "killswitch-early.service",

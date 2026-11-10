@@ -116,7 +116,7 @@ func TestStripTable(t *testing.T) {
 	}
 }
 
-// Строка «без default» (ks-probe (в)) видна в сводке, как и прочие сценарии.
+// Строка «без default» видна в сводке, как и прочие сценарии.
 func TestRenderTableNoDefaultRow(t *testing.T) {
 	out := RenderTable(Summarize([]Check{
 		{Scenario: ScenarioNoDefault, Client: "wireguard", Family: "-", Name: "check", Status: Fail, Detail: "код 5"},
@@ -126,7 +126,7 @@ func TestRenderTableNoDefaultRow(t *testing.T) {
 	}
 }
 
-// (б) при перенаправлении клиента: check даёт 0 или 5 по правилам ks-probe, но не ложный LEAK.
+// (б) при перенаправлении клиента: check даёт 0 или 5 по правилам check, но не ложный LEAK.
 func TestRedirectCheckOK(t *testing.T) {
 	inconclusive := "INCONCLUSIVE c0 v4 http 203.0.113.130:80: цель не ответила через туннель: i/o timeout\nитог: INCONCLUSIVE\n"
 	skipped := "SKIPPED c0 v4 http 203.0.113.130:80: перехвачено клиентом туннеля, через физический адаптер не ушло\n" +

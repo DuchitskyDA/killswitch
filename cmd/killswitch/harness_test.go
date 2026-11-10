@@ -3,11 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"io/fs"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/DuchitskyDA/killswitch/internal/backend"
@@ -39,6 +41,8 @@ type harness struct {
 	out    bytes.Buffer
 	err    bytes.Buffer
 	locks  int // захваты общего замка
+	// profiles — встроенные профили и фикстура example.
+	profiles fs.FS
 }
 
 type fakeProber struct {
@@ -69,7 +73,24 @@ func newHarness(t *testing.T, config string) *harness {
 		Programs: map[string][]string{wireguardExe: {wireguardExe}},
 	}}
 	noErr(t, os.WriteFile(filepath.Join(h.dir, "config.toml"), []byte(config), 0o600))
+	h.profiles = testProfiles(t)
 	return h
+}
+
+// testProfiles — встроенные профили и фикстура testdata/profiles (example): фикстура в бинарник не встраивается.
+func testProfiles(t *testing.T) fs.FS {
+	t.Helper()
+	out := fstest.MapFS{}
+	for _, src := range []fs.FS{profiles.FS, os.DirFS(filepath.Join("testdata", "profiles"))} {
+		files, err := fs.Glob(src, "*.toml")
+		noErr(t, err)
+		for _, f := range files {
+			data, err := fs.ReadFile(src, f)
+			noErr(t, err)
+			out[f] = &fstest.MapFile{Data: data}
+		}
+	}
+	return out
 }
 
 func (h *harness) deps() deps {
@@ -81,7 +102,7 @@ func (h *harness) deps() deps {
 		now:      func() time.Time { return time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC) },
 		out:      &h.out,
 		err:      &h.err,
-		profiles: profiles.FS,
+		profiles: h.profiles,
 		glob: func(p string) ([]string, error) {
 			if p == wireguardExe {
 				return []string{p}, nil

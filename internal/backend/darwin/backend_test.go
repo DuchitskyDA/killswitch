@@ -90,7 +90,7 @@ func TestStatusRuleAboveAnchorIsLeakOnly(t *testing.T) {
 	f.apply(onRules())
 	f.run.replies["pfctl -sr"] = []Result{{Out: "pass out quick all\n" + mainDefault}}
 	if repair, ok := kinds(status(t, f.b))["rule-above-anchor"]; !ok || repair {
-		t.Error("чужое правило выше якоря — только LEAK, без Repair (решение «А»)")
+		t.Error("чужое правило выше якоря — только LEAK, без Repair: основной набор не трогаем")
 	}
 }
 
@@ -180,7 +180,7 @@ func TestApplyLeavesForeignRuleAboveAnchor(t *testing.T) {
 	f.run.replies["pfctl -sr"] = []Result{{Out: "pass out quick all\n" + mainDefault}}
 	f.apply(onRules())
 	if f.run.called("pfctl -f " + pfConf) {
-		t.Error("anchor-точка есть: основной набор не перезаписывается (решение «А»)")
+		t.Error("anchor-точка есть: основной набор не перезаписывается")
 	}
 }
 

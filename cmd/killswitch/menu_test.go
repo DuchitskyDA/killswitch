@@ -169,9 +169,10 @@ func TestMenuSettingsSaveEndToEnd(t *testing.T) {
 }
 
 func TestSaveKeepsRepair(t *testing.T) {
-	h := newHarness(t, baseConfig)
+	h := newHarness(t, repairConfig)
+	h.fb.Env.Programs[blockedExe] = []string{blockedExe}
 	eq(t, h.run("repair"), exitOK)
-	_, err := h.actions().Save([]byte(lanOffConfig))
+	_, err := h.actions().Save([]byte("lan = false\n" + repairConfig))
 	noErr(t, err)
 	eq(t, h.installedMode(), policy.ModeRepair)
 }
