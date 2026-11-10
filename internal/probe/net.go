@@ -3,6 +3,7 @@ package probe
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -46,6 +47,9 @@ func (n NetProber) Direct(ctx context.Context, s Service, id ProbeID, iface env.
 	err := n.exchange(ctx, &d, s, id.Dst.Addr())
 	if bindErr != nil {
 		return false, bindErr
+	}
+	if addrInUse(err) {
+		return false, fmt.Errorf("%w: %v", ErrSourcePortBusy, err)
 	}
 	// Сокет не занял адрес и порт пробы (порт занят, адрес исчез): проба не уходила, и молчание ничего не значит.
 	var sys *os.SyscallError

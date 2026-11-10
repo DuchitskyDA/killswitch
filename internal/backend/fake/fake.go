@@ -37,6 +37,8 @@ type Backend struct {
 	Snapshots int // число вызовов Snapshot
 
 	Installed *Ruleset
+	// RulesGone — установка на месте (постоянный слой), а правил в системе нет: Status.Active без правил.
+	RulesGone bool
 	Applies   []Ruleset
 	Removes   int
 }
@@ -109,6 +111,9 @@ func (b *Backend) Remove() error {
 func (b *Backend) Status() (backend.Status, error) {
 	if b.Installed == nil {
 		return backend.Status{Structural: b.Structural}, nil
+	}
+	if b.RulesGone {
+		return backend.Status{Active: true, Hash: "fact-gone", Structural: b.Structural}, nil
 	}
 	return backend.Status{Active: true, Mode: b.Installed.Mode, Rules: 1, Hash: backend.HashOf(*b.Installed),
 		Structural: b.Structural}, nil

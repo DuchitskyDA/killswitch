@@ -2,6 +2,7 @@ package probe
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/netip"
 	"strings"
@@ -56,6 +57,9 @@ func TestDirectReportsBusySourcePort(t *testing.T) {
 	ok, err := n.Direct(context.Background(), Service{Name: "http", Proto: "tcp", Port: id.Dst.Port()}, id, env.Iface{Name: "lo"})
 	if err == nil {
 		t.Fatalf("занятый порт-источник: ждали ошибку, получили ответ=%v без ошибки", ok)
+	}
+	if !errors.Is(err, ErrSourcePortBusy) {
+		t.Fatalf("занятый порт-источник: ждали ErrSourcePortBusy, получили %v", err)
 	}
 }
 

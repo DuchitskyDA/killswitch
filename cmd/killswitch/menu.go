@@ -108,7 +108,8 @@ func (m *menuActions) Header() ui.Header {
 		note("WARN статус backend: %v", err)
 		return h
 	}
-	h.Active = s.Active
+	// s.Active — установка есть (постоянный слой); правила действуют, только если они есть в системе.
+	h.Active = s.Active && s.Rules > 0
 	if !recorded && s.Active {
 		h.Mode = policy.ModeOn
 	}
