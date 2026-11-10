@@ -1,0 +1,344 @@
+/* Токены и базовые стили окна. Светлая тема — :root, тёмная — класс dark на <html>. */
+
+:root {
+  --bg: #e9edf1;
+  --surface: #ffffff;
+  --surface-2: #f3f5f8;
+  --ink: #15202b;
+  --ink-2: #566473;
+  --line: #cbd3dc;
+  --on-ink: #ffffff;
+
+  /* Цвет несёт только состояние. */
+  --guard: #0b6b5b;
+  --guard-bg: #dff0eb;
+  --open: #a8500a;
+  --open-bg: #fbecd9;
+  --leak: #b3261e;
+  --leak-bg: #fbe4e2;
+  --focus: #1d4ed8;
+
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", "Noto Sans", sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", "Noto Sans",
+    sans-serif;
+  --font-data: "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", ui-monospace, Menlo, monospace;
+
+  --r-control: 6px;
+  --r-panel: 10px;
+  --control-h: 36px;
+
+  color-scheme: light;
+}
+
+:root.dark {
+  --bg: #10151b;
+  --surface: #1a2129;
+  --surface-2: #212a34;
+  --ink: #e7ecf1;
+  --ink-2: #9aa7b5;
+  --line: #303b48;
+  --on-ink: #10151b;
+
+  --guard: #46c2a0;
+  --guard-bg: #12332c;
+  --open: #f0a04b;
+  --open-bg: #3a2a14;
+  --leak: #f87171;
+  --leak-bg: #3b1717;
+  --focus: #7aa2ff;
+
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.45 var(--font-ui);
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+dl,
+dd,
+figure {
+  margin: 0;
+  padding: 0;
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Окно: одна колонка; как делиться на широком — решает содержимое. */
+.window {
+  max-width: 1120px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+/* Содержимое окна: раскладку решает его ширина; --fill — высота окна без полей. */
+.cq {
+  container: win / inline-size;
+  --fill: calc(100vh - 32px);
+}
+
+.muted {
+  color: var(--ink-2);
+}
+
+.small {
+  font-size: 12px;
+}
+
+/* Данные машины: адаптеры, адреса, пути. */
+.mono {
+  font-family: var(--font-data);
+  font-size: 0.93em;
+  overflow-wrap: anywhere;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  padding: 16px;
+}
+
+/* Кнопки: основная — чернила, обычная — контур, тихая — текст. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--control-h);
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--surface);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    border-color 120ms;
+}
+
+.btn:hover {
+  border-color: var(--ink-2);
+}
+
+.btn-primary {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.btn-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-2);
+}
+
+.btn-quiet:hover {
+  border-color: transparent;
+  color: var(--ink);
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+
+.link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--ink-2);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.field {
+  width: 100%;
+  min-height: var(--control-h);
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--surface-2);
+}
+
+.field::placeholder {
+  color: var(--ink-2);
+}
+
+.field[aria-invalid="true"] {
+  border-color: var(--leak);
+}
+
+/* Выключатель настройки: <button class="switch" role="switch" aria-checked>. */
+.switch {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--ink-2);
+  border-radius: 11px;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ink-2);
+  transition: transform 120ms;
+}
+
+.switch[aria-checked="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.switch[aria-checked="true"]::after {
+  background: var(--on-ink);
+  transform: translateX(18px);
+}
+
+/* Тон состояния: цвет и подложка одним классом. */
+.tone-guard {
+  --tone: var(--guard);
+  --tone-bg: var(--guard-bg);
+}
+
+.tone-open {
+  --tone: var(--open);
+  --tone-bg: var(--open-bg);
+}
+
+.tone-leak {
+  --tone: var(--leak);
+  --tone-bg: var(--leak-bg);
+}
+
+.tone-none {
+  --tone: var(--ink-2);
+  --tone-bg: var(--surface-2);
+}
+
+/* Отметка: короткое слово состояния рядом со значением. */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.tag-open {
+  border-color: transparent;
+  background: var(--open-bg);
+  color: var(--open);
+}
+
+.tag-leak {
+  border-color: transparent;
+  background: var(--leak-bg);
+  color: var(--leak);
+}
+
+/* Сообщение: предупреждение, утечка или ошибка — обводка цвета состояния и подложка. */
+.note {
+  padding: 10px 12px;
+  border: 1px solid var(--ink-2);
+  border-radius: var(--r-control);
+  background: var(--surface-2);
+}
+
+.note-open {
+  border-color: var(--open);
+  background: var(--open-bg);
+}
+
+.note-leak {
+  border-color: var(--leak);
+  background: var(--leak-bg);
+}
+
+/* Выполняется: бегущая штриховка. */
+.running {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 6px,
+    color-mix(in srgb, currentColor 16%, transparent) 6px 12px
+  );
+  background-size: 34px 100%;
+  animation: running 700ms linear infinite;
+}
+
+@keyframes running {
+  to {
+    background-position: 34px 0;
+  }
+}
+
+/* Заглушка на время загрузки. */
+.skeleton {
+  border-radius: var(--r-control);
+  background: var(--surface-2);
+  color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
