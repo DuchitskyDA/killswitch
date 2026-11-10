@@ -190,6 +190,11 @@ jobs:
           WG_SHA256: '76fcec042c5989c5b816cd32eaed1e5b1c3b998a4b1c9eca55f299e3314ef7e4'
         run: ./ci/windows/wgnt.ps1
 
+      - name: installer (menu.ps1)
+        if: success() || failure()
+        timeout-minutes: 5
+        run: ./ci/windows/install.ps1
+
       - name: cleanup
         if: always()
         timeout-minutes: 3
