@@ -15,6 +15,12 @@ import (
 
 // transition — команды on, off, repair. off и repair — до перезагрузки: после неё enforce вернёт on.
 func (a *app) transition(target policy.Mode) error {
+	return a.transitionFrom(func(state.State) (policy.Mode, bool) { return target, true })
+}
+
+// transitionFrom — переход к режиму, который choose выбирает по state.json под общим замком (повреждённый или
+// отсутствующий — пустое состояние); false — переход не нужен.
+func (a *app) transitionFrom(choose func(state.State) (policy.Mode, bool)) error {
 	release, err := a.withLock()
 	if err != nil {
 		return err
@@ -26,6 +32,10 @@ func (a *app) transition(target policy.Mode) error {
 			return fail(exitApply, "state.json: %v", err)
 		}
 		st = state.State{}
+	}
+	target, ok := choose(st)
+	if !ok {
+		return nil
 	}
 	p, err := a.loadPolicy(target)
 	if err != nil {

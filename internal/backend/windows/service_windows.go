@@ -7,7 +7,7 @@ import (
 	"golang.org/x/sys/windows/svc"
 )
 
-// ServiceName — имя службы Windows (её регистрирует dist/windows/menu.ps1; ImagePath — `killswitch.exe enforce`).
+// ServiceName — имя службы Windows (её регистрирует установка, internal/install/windows; ImagePath — `killswitch.exe enforce`).
 const ServiceName = "killswitch"
 
 // ServeIfService: процесс запущен SCM — отвечаем ему в фоне, а основной поток выполняет обычную команду (enforce).

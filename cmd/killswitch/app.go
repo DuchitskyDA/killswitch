@@ -60,6 +60,13 @@ type deps struct {
 	// Окно: машина, на которой оно открывается, и срок ожидания первого открытия (0 — по умолчанию).
 	host        window.Host
 	windowStart time.Duration
+	// Установка с рабочего стола: запуск не из терминала (двойной клик), установка программы в систему
+	// (enable — включение защиты, если настройки уже есть) и её снятие вокруг снятия правил; nil — ОС без
+	// установки. alert — сообщение пользователю, когда консоли не видно.
+	desktop       func() bool
+	installSelf   func(enable func() error) error
+	uninstallSelf func(removeRules func() error) error
+	alert         func(msg string)
 }
 
 type app struct {
@@ -85,6 +92,9 @@ func run(ctx context.Context, args []string, d deps) int {
 	fsFlags := flag.NewFlagSet("killswitch", flag.ContinueOnError)
 	fsFlags.SetOutput(d.err)
 	configPath := fsFlags.String("config", filepath.Join(d.dir, "config.toml"), "путь к config.toml")
+	if len(args) == 0 && d.desktop != nil && d.desktop() {
+		args = []string{"setup"}
+	}
 	if len(args) == 0 && d.terminal != nil && d.terminal() {
 		return exitCode(d, (&app{d: d, configPath: *configPath}).menu(ctx))
 	}
@@ -118,6 +128,12 @@ func (a *app) dispatch(ctx context.Context, cmd string, rest []string) error {
 		return a.detect()
 	case "window":
 		return a.window(ctx)
+	case "menu": // перезапуск меню с повышением (Windows): без аргументов он открыл бы установку
+		return a.menu(ctx)
+	case "setup":
+		return a.setup(ctx)
+	case "install":
+		return a.install()
 	}
 	known := map[string]bool{"on": true, "off": true, "repair": true, "status": true, "check": true,
 		"enforce": true, "uninstall": true, "plan": true}
