@@ -48,7 +48,15 @@ type harness struct {
 type fakeProber struct {
 	answered bool
 	routed   int // baseline по маршруту (Route)
+
+	// простая проверка (check без своих адресов)
+	resolved []netip.Addr
+	plainErr error
 }
+
+func (f *fakeProber) Resolve(context.Context, string) ([]netip.Addr, error) { return f.resolved, nil }
+
+func (f *fakeProber) Plain(context.Context, probe.Service, netip.Addr) error { return f.plainErr }
 
 func (f *fakeProber) Tunnel(context.Context, probe.Service, netip.Addr, env.Iface) error { return nil }
 

@@ -31,7 +31,8 @@ type Backend struct {
 	RemoveErr   error
 	Structural  []probe.StructuralFinding
 	Dropped     bool
-	ApplyDrifts bool // Apply ставит не тот набор, что в плане
+	ApplyDrifts bool              // Apply ставит не тот набор, что в плане
+	Running     []backend.Program // запущенные программы (backend.ProgramLister)
 
 	Snapshots int // число вызовов Snapshot
 
@@ -62,8 +63,16 @@ func (b *Backend) Plan(p policy.Policy, e env.Env) (backend.Ruleset, error) {
 	}
 	text := fmt.Sprintf("mode=%s tunnel=%s dns=%s health=%s lan=%t trust=%v repair=%v",
 		p.Mode, strings.Join(tun, ","), p.DNS, e.Health, p.LAN, p.Trust, p.Repair.Programs)
+	if p.Mode == policy.ModeRepair {
+		for _, n := range p.Repair.Names {
+			text += fmt.Sprintf(" name:%s=%v", n, e.Programs[backend.NameKey(n)])
+		}
+	}
 	return Ruleset{Mode: p.Mode, Text: text}, nil
 }
+
+// RunningPrograms — заданный список запущенных программ.
+func (b *Backend) RunningPrograms() ([]backend.Program, error) { return b.Running, nil }
 
 // Apply «устанавливает» набор.
 func (b *Backend) Apply(r backend.Ruleset) error {

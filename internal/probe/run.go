@@ -14,6 +14,7 @@ type Service struct {
 	Name  string
 	Proto string
 	Port  uint16
+	Host  string // имя сайта в запросе HTTP; пусто — адрес цели
 }
 
 // Services — пробы к каждой цели.
@@ -35,6 +36,10 @@ type Prober interface {
 	// Direct: проба через физический интерфейс с портом-источником id.Src; answered — пришёл ответ сервера.
 	// err — только сбой подготовки (привязка, порт занят), не отсутствие ответа.
 	Direct(ctx context.Context, s Service, id ProbeID, iface env.Iface) (answered bool, err error)
+	// Resolve — адреса имени host системным резолвером (простая проверка).
+	Resolve(ctx context.Context, host string) ([]netip.Addr, error)
+	// Plain: цель отвечает обычным путём — сокетом без привязки, как у любой программы (простая проверка).
+	Plain(ctx context.Context, s Service, dst netip.Addr) error
 }
 
 // EvidenceSource — свидетельство, что пробу отбросило наше правило (Backend.Evidence).
@@ -74,20 +79,20 @@ type Input struct {
 func Run(ctx context.Context, in Input, p Prober, ev EvidenceSource, now func() time.Time) CheckResult {
 	r := runner{ctx: ctx, p: p, ev: ev, now: now, port: SrcPortFirst}
 	var probes []ProbeResult
-	if len(in.Targets) == 0 {
-		probes = append(probes, ProbeResult{Target: "-", Class: Inconclusive,
-			Detail: "check.targets пуст: задайте цели со слушающими HTTP 80, UDP-эхо 443 и DNS 53"})
-	}
 	if !anyDefaultRoute(in.Physical) {
 		probes = append(probes, ProbeResult{Target: "-", Class: Inconclusive,
 			Detail: "ни у одного поднятого физического интерфейса нет маршрута по умолчанию: путь в интернет мимо туннеля не найден, проверять нечего"})
+	}
+	simple := len(in.Targets) == 0
+	if simple {
+		probes = append(probes, r.simple(in)...)
 	}
 	for _, dst := range in.Targets {
 		for _, s := range Services {
 			probes = append(probes, r.target(in, s, dst)...)
 		}
 	}
-	return CheckResult{Probes: probes, Structural: in.Structural, Overall: Overall(probes, in.Structural)}
+	return CheckResult{Probes: probes, Structural: in.Structural, Overall: Overall(probes, in.Structural), Simple: simple}
 }
 
 type runner struct {
@@ -99,18 +104,22 @@ type runner struct {
 }
 
 func (r *runner) target(in Input, s Service, dst netip.Addr) []ProbeResult {
-	fam := family(dst)
-	baseline := r.baseline(in, s, dst)
+	return r.physical(in, s, dst, r.baseline(in, s, dst), r.dropped)
+}
+
+// physical — проба s к dst через каждый физический интерфейс.
+func (r *runner) physical(in Input, s Service, dst netip.Addr, baseline string, silent func(ProbeID) (Class, string)) []ProbeResult {
 	var out []ProbeResult
 	for _, phys := range in.Physical {
-		res := ProbeResult{Target: netip.AddrPortFrom(dst, s.Port).String(), Family: fam, Proto: s.Name, Iface: phys.Name}
-		res.Class, res.Detail = r.direct(s, dst, phys, baseline)
+		res := ProbeResult{Target: netip.AddrPortFrom(dst, s.Port).String(), Family: family(dst), Proto: s.Name, Iface: phys.Name}
+		res.Class, res.Detail = r.direct(s, dst, phys, baseline, silent)
 		out = append(out, res)
 	}
 	return out
 }
 
-func (r *runner) direct(s Service, dst netip.Addr, phys env.Iface, baseline string) (Class, string) {
+// direct — одна проба через физический интерфейс; silent — что значит молчание сервера.
+func (r *runner) direct(s Service, dst netip.Addr, phys env.Iface, baseline string, silent func(ProbeID) (Class, string)) (Class, string) {
 	src, ok := phys.SourceAddr(dst.Is4())
 	if !ok {
 		return Skipped, "нет адреса " + family(dst) + " на интерфейсе"
@@ -138,6 +147,11 @@ func (r *runner) direct(s Service, dst netip.Addr, phys env.Iface, baseline stri
 	if answered {
 		return r.answered(id)
 	}
+	return silent(id)
+}
+
+// dropped — молчание сервера в полной проверке: BLOCKED только со свидетельством отброса нашим правилом.
+func (r *runner) dropped(id ProbeID) (Class, string) {
 	dropped, err := r.ev.Evidence(id, id.At)
 	if err != nil {
 		return Inconclusive, "нет свидетельства: " + err.Error()

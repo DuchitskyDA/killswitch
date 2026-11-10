@@ -38,6 +38,8 @@ type CheckResult struct {
 	Probes     []ProbeResult
 	Structural []StructuralFinding
 	Overall    Class
+	// Simple — своих целей нет, шла простая проверка: только HTTP к SimpleHost.
+	Simple bool
 }
 
 // ProbeID — 5-кортеж и время пробы: по нему backend ищет свидетельство отброса своим правилом.

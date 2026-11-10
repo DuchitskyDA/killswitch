@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"os"
 	"syscall"
 	"time"
 
@@ -46,16 +47,34 @@ func (n NetProber) Direct(ctx context.Context, s Service, id ProbeID, iface env.
 	if bindErr != nil {
 		return false, bindErr
 	}
+	// Сокет не занял адрес и порт пробы (порт занят, адрес исчез): проба не уходила, и молчание ничего не значит.
+	var sys *os.SyscallError
+	if errors.As(err, &sys) && sys.Syscall == "bind" {
+		return false, err
+	}
+	// Проверку прервали (отмена, а не срок одной пробы): проба не состоялась.
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
 	return err == nil, nil
+}
+
+// Resolve — адреса имени системным резолвером.
+func (n NetProber) Resolve(ctx context.Context, host string) ([]netip.Addr, error) {
+	ctx, cancel := context.WithTimeout(ctx, n.Timeout)
+	defer cancel()
+	return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+}
+
+// Plain — обмен сокетом без привязки к интерфейсу, по обычному маршруту.
+func (n NetProber) Plain(ctx context.Context, s Service, dst netip.Addr) error {
+	return n.exchange(ctx, &net.Dialer{}, s, dst)
 }
 
 func (n NetProber) exchange(ctx context.Context, d health.Dialer, s Service, dst netip.Addr) error {
 	ctx, cancel := context.WithTimeout(ctx, n.Timeout)
 	defer cancel()
 	addr := netip.AddrPortFrom(dst, s.Port)
-	if s.Name == "http" {
-		return health.HTTPGet(ctx, d, addr, "/")
-	}
 	conn, err := d.DialContext(ctx, s.Proto, addr.String())
 	if err != nil {
 		return err
@@ -65,6 +84,12 @@ func (n NetProber) exchange(ctx context.Context, d health.Dialer, s Service, dst
 		_ = conn.SetDeadline(deadline)
 	}
 	switch s.Name {
+	case "http":
+		host := s.Host
+		if host == "" {
+			host = dst.String()
+		}
+		return health.Exchange(conn, host, "/")
 	case "dns-tcp":
 		q := dnsQuery(dst.Is4())
 		return writeRead(conn, append([]byte{byte(len(q) >> 8), byte(len(q))}, q...), 2)

@@ -55,7 +55,7 @@ func TestConfigsValidate(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, c := range Clients {
-		for _, o := range []ConfigOpts{{}, {Strict: true}, {TunnelUpDNS: true}, {Strict: true, CgroupPath: "system.slice/x.scope/ksl-xray",
+		for _, o := range []ConfigOpts{{}, {Strict: true}, {TunnelUpDNS: true}, {NoTargets: true}, {Strict: true, CgroupPath: "system.slice/x.scope/ksl-xray",
 			ExtraEndpoints: []string{"203.0.113.130:443/udp", "[2001:db8:b::2]:443/udp", "203.0.113.130:53/tcp"}}} {
 			cfg, err := policy.ParseConfig([]byte(c.Config(o)))
 			if err != nil {
@@ -141,5 +141,16 @@ func TestRedirectCheckOK(t *testing.T) {
 		if got := RedirectCheckOK(c.out, c.code); got != c.want {
 			t.Errorf("код %d, %q: %v, ждали %v", c.code, c.out, got, c.want)
 		}
+	}
+}
+
+// Без своих адресов check делает простую проверку: секции [check] в конфиге нет.
+func TestConfigNoTargetsOmitsCheck(t *testing.T) {
+	c := Clients["wireguard"]
+	if cfg := c.Config(ConfigOpts{NoTargets: true}); strings.Contains(cfg, "[check]") {
+		t.Errorf("в конфиге без целей осталась секция [check]:\n%s", cfg)
+	}
+	if cfg := c.Config(ConfigOpts{}); !strings.Contains(cfg, "[check]") {
+		t.Errorf("в обычном конфиге нет секции [check]:\n%s", cfg)
 	}
 }

@@ -89,7 +89,8 @@ func adapters(p policy.Policy) ([]env.Iface, []netip.Addr, error) {
 	return ifaces, dns, nil
 }
 
-// programs раскрывает все glob политики (Trust и Repair — независимо от режима) в app-id.
+// programs раскрывает все glob политики (Trust и Repair — независимо от режима) в app-id и находит программы
+// по именам repair.names.
 func programs(p policy.Policy) (map[string][]string, error) {
 	globs := append([]string{}, p.Repair.Programs...)
 	for _, t := range p.Trust {
@@ -114,7 +115,7 @@ func programs(p policy.Policy) (map[string][]string, error) {
 		}
 		out[g] = ids
 	}
-	return out, nil
+	return out, addNamed(out, p.Repair.Names)
 }
 
 // resolve разрешает имена Endpoints.

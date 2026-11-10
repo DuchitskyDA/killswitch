@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/DuchitskyDA/killswitch/internal/backend"
 	"github.com/DuchitskyDA/killswitch/internal/policy"
 )
 
@@ -193,10 +194,71 @@ func TestTrustRemoveLeavesExplicitEmpty(t *testing.T) {
 	eq(t, len(trust), 0)
 }
 
+// «Закрыты в починке»: 1 по имени, 2 выбрать из запущенных, 3 по пути, 0 назад.
 func TestRepairProgramsOnWindows(t *testing.T) {
 	f := &fakeActions{}
-	runMenu("windows", f, steps("5", "6", "1", `C:\blocked.exe`, "0")...)
+	runMenu("windows", f, steps("5", "6", "3", "1", `C:\blocked.exe`, "0", "0")...)
 	eq(t, f.lastSaved(t).Repair.Programs, &[]string{`C:\blocked.exe`})
+}
+
+func TestRepairNameAdd(t *testing.T) {
+	f := &fakeActions{}
+	runMenu("windows", f, steps("5", "6", "1", "1", "node", "0", "0")...)
+	eq(t, f.lastSaved(t).Repair.Names, &[]string{"node"})
+}
+
+// Имя с расширением принимается без него: в конфиге имена — без .exe.
+func TestRepairNameDropsExeExtension(t *testing.T) {
+	f := &fakeActions{}
+	runMenu("windows", f, steps("5", "6", "1", "1", "Node.EXE", "0", "0")...)
+	eq(t, f.lastSaved(t).Repair.Names, &[]string{"Node"})
+}
+
+func TestRepairNameRejectsPath(t *testing.T) {
+	f := &fakeActions{}
+	out := runMenu("windows", f, steps("5", "6", "1", "1", `C:\Tools\node`, "0", "0", "2")...)
+	contains(t, out, "не принято", true)
+	eq(t, f.lastSaved(t).Repair.Names, (*[]string)(nil))
+}
+
+var runningFixture = []backend.Program{
+	{Name: "node", Path: `C:\Program Files\nodejs\node.exe`},
+	{Name: "Node", Path: `D:\portable\Node.exe`},
+	{Name: "odd[1]", Path: `C:\Temp\odd[1].exe`},
+	{Name: "zed", Path: `C:\Tools\zed.exe`},
+}
+
+// Список запущенных — по одному имени на строку; имя, непригодное для конфига, в список не попадает.
+func TestRepairPickFromRunning(t *testing.T) {
+	f := &fakeActions{running: runningFixture}
+	out := runMenu("windows", f, steps("5", "6", "2", "2", "0")...)
+	contains(t, out, `1. node — C:\Program Files\nodejs\node.exe (и ещё 1)`, true)
+	contains(t, out, `2. zed — C:\Tools\zed.exe`, true)
+	contains(t, out, "odd[1]", false)
+	eq(t, f.lastSaved(t).Repair.Names, &[]string{"zed"})
+}
+
+func TestRepairPickFromRunningAddsNameOnce(t *testing.T) {
+	f := &fakeActions{running: runningFixture, cfg: cfgWith(t, "[repair]\nnames = ['NODE']\n")}
+	out := runMenu("windows", f, steps("5", "6", "2", "1", "0", "2")...)
+	contains(t, out, "уже в списке", true)
+	eq(t, f.lastSaved(t).Repair.Names, &[]string{"NODE"})
+}
+
+func TestRepairPickFromRunningEmpty(t *testing.T) {
+	out := runMenu("windows", &fakeActions{}, "5", "6", "2", "0", "0", "0")
+	contains(t, out, "запущенные программы не найдены", true)
+}
+
+func TestRepairPickFromRunningReportsError(t *testing.T) {
+	out := runMenu("windows", &fakeActions{runningErr: errors.New("список процессов недоступен")}, "5", "6", "2", "0", "0", "0")
+	contains(t, out, "список процессов недоступен", true)
+}
+
+func TestRepairSummaryListsNamesAndPaths(t *testing.T) {
+	f := &fakeActions{cfg: cfgWith(t, "[repair]\nnames = ['node']\nprograms = ['C:\\blocked.exe']\n")}
+	out := runMenu("windows", f, "5", "0", "0")
+	contains(t, out, `Закрыты в починке: node, C:\blocked.exe`, true)
 }
 
 func TestRepairHiddenInSettingsOnDarwin(t *testing.T) {

@@ -226,13 +226,25 @@ func (a *app) snapshot(p policy.Policy, st state.State, h env.HealthState) (env.
 	return e, nil
 }
 
-// planFor: проверка путей repair и чистый план.
+// planFor: проверка списка repair и чистый план. Шаблон пути без файлов — ошибка; имя без файлов —
+// предупреждение; по всему списку нет ни одного файла — ошибка.
 func (a *app) planFor(p policy.Policy, e env.Env) (backend.Ruleset, error) {
 	if p.Mode == policy.ModeRepair {
+		found := 0
 		for _, g := range p.Repair.Programs {
 			if len(e.Programs[g]) == 0 {
 				return nil, fail(exitConfig, "repair: по шаблону %q не найдено ни одной программы", g)
 			}
+			found += len(e.Programs[g])
+		}
+		for _, n := range p.Repair.Names {
+			if len(e.Programs[backend.NameKey(n)]) == 0 {
+				fmt.Fprintf(a.d.err, "WARN repair: по имени %q программа не найдена\n", n)
+			}
+			found += len(e.Programs[backend.NameKey(n)])
+		}
+		if found == 0 {
+			return nil, fail(exitConfig, "repair: по именам %q не найдено ни одной программы", p.Repair.Names)
 		}
 	}
 	r, err := a.b.Plan(p, e)

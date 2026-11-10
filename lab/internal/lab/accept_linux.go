@@ -987,11 +987,24 @@ func (a *acc) s9() error {
 		a.expect("9", "-", "check под on", code == 0, fmt.Sprintf("код %d", code))
 	}
 	a.noDefaultRoute(code)
+	underOn := func(out string, code int) bool {
+		if a.c.Redirect {
+			return RedirectCheckOK(out, code) // единственную TCP-пробу перехватывает клиент
+		}
+		return code == 0 && strings.Contains(out, "утечек не найдено (простая проверка)")
+	}
+	if err := a.simpleCheck("простая проверка под on: утечек не найдено", underOn); err != nil {
+		return err
+	}
 	if _, err := a.ns[topo.ClientNS].Run(a.ctx, "nft", "delete", "table", "inet", "killswitch"); err != nil {
 		return err
 	}
 	_, code = a.ks("check")
 	a.expect("9", "-", "check после ручного снятия таблицы", code == 4, fmt.Sprintf("код %d (ждали 4)", code))
+	if err := a.simpleCheck("простая проверка после ручного снятия таблицы: утечка",
+		func(_ string, code int) bool { return code == 4 }); err != nil {
+		return err
+	}
 	if err := a.startEnforce(a.ksBin); err != nil {
 		return err
 	}
@@ -1003,6 +1016,23 @@ func (a *acc) s9() error {
 	a.stopEnforce()
 	a.blocked("10", shortProbes[0], a.direct(), "после enforce прямая")
 	return nil
+}
+
+// simpleCheck — check без своих адресов (простая проверка). Настоящего сайта на стенде нет: на время шага его имя
+// в mount ns ведёт на «интернет»-хост (/etc/hosts), а конфиг пишется без [check] targets; после шага оба возвращаются.
+func (a *acc) simpleCheck(name string, ok func(out string, code int) bool) error {
+	hosts := fmt.Sprintf("127.0.0.1 localhost\n::1 localhost\n%s %s\n%s %s\n", topo.InetV4, SimpleHost, topo.InetV6, SimpleHost)
+	if out, err := a.inMnt(hosts, "sh", "-c", "cat > /run/ksl/hosts && mount --bind /run/ksl/hosts /etc/hosts"); err != nil {
+		return fmt.Errorf("подстановка /etc/hosts: %w: %s", err, strings.TrimSpace(out))
+	}
+	defer a.inMnt("", "umount", "/etc/hosts")
+	if err := a.writeConfig(ConfigOpts{CgroupPath: a.cgRel, NoTargets: true}); err != nil {
+		return err
+	}
+	out, code := a.ks("check")
+	a.expect("9", "-", name, ok(out, code),
+		fmt.Sprintf("код %d; %s", code, strings.Join(grepLines(out, "^LEAK|^INCONCLUSIVE|итог|простая проверка"), " | ")))
+	return a.writeConfig(ConfigOpts{CgroupPath: a.cgRel})
 }
 
 // redirectDiag — (б): как клиент ведёт трафик check (root): маршрут к цели, таблица sing-box, TCP от root по маршруту.

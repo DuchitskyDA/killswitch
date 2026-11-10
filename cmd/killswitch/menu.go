@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/DuchitskyDA/killswitch/internal/backend"
 	"github.com/DuchitskyDA/killswitch/internal/env"
 	"github.com/DuchitskyDA/killswitch/internal/policy"
 	"github.com/DuchitskyDA/killswitch/internal/profile"
@@ -178,6 +179,14 @@ func (m *menuActions) Detect() []string {
 		}
 	}
 	return found
+}
+
+// Running — запущенные программы, если backend умеет их перечислять (Windows).
+func (m *menuActions) Running() ([]backend.Program, error) {
+	if l, ok := m.a.b.(backend.ProgramLister); ok {
+		return l.RunningPrograms()
+	}
+	return nil, nil
 }
 
 // Profiles — встроенные профили с секцией текущей ОС.

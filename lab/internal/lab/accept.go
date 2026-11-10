@@ -205,7 +205,11 @@ type ConfigOpts struct {
 	TunnelUpDNS    bool     // dns.mode = tunnel-up, dns.health через туннель к «интернету»
 	CgroupPath     string   // путь доверенного cgroup относительно /sys/fs/cgroup (xray)
 	ExtraEndpoints []string // дополнительные endpoints strict (проверка (а))
+	NoTargets      bool     // без [check] targets: check делает простую проверку
 }
+
+// SimpleHost — сайт простой проверки check; на стенде его имя ведёт на «интернет»-хост (hosts в mount ns).
+const SimpleHost = "example.com"
 
 // HealthURL — dns.health приёмки: HTTP «интернет»-хоста, отвечает только через живой туннель.
 var HealthURL = fmt.Sprintf("http://%s:%d/", topo.InetV4, topo.HTTPPort)
@@ -232,7 +236,9 @@ func (c ClientDef) Config(o ConfigOpts) string {
 	if o.TunnelUpDNS {
 		fmt.Fprintf(&b, "\n[dns]\nmode = \"tunnel-up\"\nhealth = %q\n", HealthURL)
 	}
-	fmt.Fprintf(&b, "\n[check]\ntargets = %s\n", tomlList([]string{topo.InetV4.String(), topo.InetV6.String()}))
+	if !o.NoTargets {
+		fmt.Fprintf(&b, "\n[check]\ntargets = %s\n", tomlList([]string{topo.InetV4.String(), topo.InetV6.String()}))
+	}
 	return b.String()
 }
 

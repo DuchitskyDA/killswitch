@@ -26,7 +26,7 @@ func TestEncodeFullConfigRoundTrips(t *testing.T) {
 			Endpoints: ptr([]string{"[2001:db8::1]:443/tcp", "tunnel.example.org:51820/udp"})},
 		DNS: configDNS{Mode: ptr("resolvers"), Resolvers: ptr([]string{"192.0.2.53", "198.51.100.0/24"}),
 			Health: ptr("http://198.18.0.1:80/health")},
-		Repair: configRepair{Programs: ptr([]string{`C:\Users\user\AppData\Local\app\app.exe`})},
+		Repair: configRepair{Programs: ptr([]string{`C:\Users\user\AppData\Local\app\app.exe`}), Names: ptr([]string{"node"})},
 		Check:  configCheck{Targets: ptr([]string{"203.0.113.130"})},
 	}
 	c.SetTrust([]Trust{{Kind: KindProgram, Value: `C:\Program Files\Happ\Happ.exe`, Destinations: DestEndpoints},

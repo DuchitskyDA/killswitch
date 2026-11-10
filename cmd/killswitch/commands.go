@@ -62,7 +62,21 @@ func (a *app) plan(args []string) error {
 		return err
 	}
 	fmt.Fprint(a.d.out, r.Render())
+	if mode == policy.ModeRepair {
+		a.reportRepairNames(p, e)
+	}
 	return nil
+}
+
+// reportRepairNames — какие файлы найдены по каждому имени repair.names (пути — из того же снимка, что правила).
+func (a *app) reportRepairNames(p policy.Policy, e env.Env) {
+	for _, n := range p.Repair.Names {
+		files := "не найдено"
+		if found := e.Programs[backend.NameFilesKey(n)]; len(found) > 0 {
+			files = strings.Join(found, ", ")
+		}
+		fmt.Fprintf(a.d.out, "починка: %s — %s\n", n, files)
+	}
 }
 
 func (a *app) status() error {
@@ -96,8 +110,8 @@ func (a *app) status() error {
 	return snapErr
 }
 
-// printTunnelMatches — совпавшие туннельные адаптеры. Конфиг не читается — WARN (status работает и без него);
-// сбой снимка — ошибка backend (код 3).
+// printTunnelMatches — совпавшие туннельные адаптеры и, где есть repair, файлы по именам repair.names.
+// Конфиг не читается — WARN (status работает и без него); сбой снимка — ошибка backend (код 3).
 func (a *app) printTunnelMatches(st state.State) error {
 	p, err := a.loadPolicy(policy.ModeOn)
 	if err != nil {
@@ -109,6 +123,9 @@ func (a *app) printTunnelMatches(st state.State) error {
 		return err
 	}
 	a.reportTunnels(p, e)
+	if a.b.Capabilities().Repair {
+		a.reportRepairNames(p, e)
+	}
 	return nil
 }
 
@@ -150,6 +167,9 @@ func (a *app) check(ctx context.Context) error {
 			in.Physical = append(in.Physical, i)
 		}
 	}
+	if len(in.Targets) == 0 {
+		fmt.Fprintf(a.d.out, "простая проверка: HTTP к %s с каждого физического адаптера и обычным путём ([check] targets не заданы)\n", probe.SimpleHost)
+	}
 	res := probe.Run(ctx, in, a.d.prober(a.b), a.b, a.d.now)
 	for _, r := range res.Probes {
 		fmt.Fprintf(a.d.out, "%s %s %s %s %s: %s\n", r.Class, r.Iface, r.Family, r.Proto, r.Target, r.Detail)
@@ -158,10 +178,32 @@ func (a *app) check(ctx context.Context) error {
 		fmt.Fprintf(a.d.out, "LEAK %s: %s\n", f.Kind, f.Detail)
 	}
 	fmt.Fprintf(a.d.out, "итог: %s\n", res.Overall)
+	if res.Simple {
+		fmt.Fprintln(a.d.out, simpleVerdict(res))
+	}
 	if code := probe.ExitCode(res.Overall); code != exitOK {
 		return cliError{code: code, err: errors.New("")}
 	}
 	return nil
+}
+
+// simpleVerdict — итог простой проверки словами: что она показала и чего не проверяла.
+func simpleVerdict(res probe.CheckResult) string {
+	switch res.Overall {
+	case probe.Blocked:
+		return "утечек не найдено (простая проверка)\n" +
+			"проверен только TCP; UDP и DNS не проверялись — для полной проверки задайте свои адреса ([check] targets)"
+	case probe.Leak:
+		return "УТЕЧКА (простая проверка)"
+	}
+	reason := "ни одной пробы не выполнено"
+	for _, r := range res.Probes {
+		if r.Class == probe.Inconclusive {
+			reason = r.Detail
+			break
+		}
+	}
+	return "нет уверенности (простая проверка): " + reason
 }
 
 func (a *app) detect() error {
