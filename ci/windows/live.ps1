@@ -149,7 +149,7 @@ $tie.WaitForExit(15000) | Out-Null
 Expect-Code 'S9.tie-gone-status' 0 { & $KsExe status }
 
 Write-Host '== S8: сломанное состояние и uninstall без конфига'
-Start-Service killswitch
+Install-Service # S9 снял службу и копию полным uninstall
 Start-Sleep 10 # первый шаг службы завершён (замок свободен)
 Expect-Code 'S8.off' 0 { & $KsExe off }
 Set-Content 'C:\ProgramData\killswitch\state.json' '{"gen": 7, "mode": "off", broken'

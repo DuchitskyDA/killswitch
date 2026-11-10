@@ -6,6 +6,9 @@ import (
 	"strings"
 )
 
+// isDesktop — запуск с рабочего стола: на macOS это открытие killswitch.app из Finder.
+func isDesktop() bool { return launchedFromDesktop() }
+
 // launchedFromDesktop — программу открыли из Finder: исполняемый файл лежит в *.app/Contents/MacOS/,
 // а stdin не терминал (запуск того же файла из терминала — обычный CLI).
 func launchedFromDesktop() bool {
