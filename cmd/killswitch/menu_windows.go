@@ -12,7 +12,7 @@ var elevateFunc = elevate
 // isAdmin — процесс запущен с повышенными правами.
 func isAdmin() bool { return windows.GetCurrentProcessToken().IsElevated() }
 
-// elevate перезапускает killswitch через ShellExecute «runas»: без команды — меню в новом окне консоли;
+// elevate перезапускает killswitch через ShellExecute «runas»: без команды — меню (команда menu) в новом окне консоли;
 // с командой (window) консоль свёрнута — она только держит сервер окна.
 func elevate(command string) error {
 	exe, err := os.Executable()
@@ -27,14 +27,16 @@ func elevate(command string) error {
 	if err != nil {
 		return err
 	}
+	show := int32(windows.SW_SHOWMINNOACTIVE)
 	if command == "" {
-		return windows.ShellExecute(0, verb, file, nil, nil, windows.SW_SHOWNORMAL)
+		// Меню — явной командой: новая консоль без аргументов выглядит как двойной клик, то есть установка.
+		command, show = "menu", windows.SW_SHOWNORMAL
 	}
 	args, err := windows.UTF16PtrFromString(command)
 	if err != nil {
 		return err
 	}
-	return windows.ShellExecute(0, verb, file, args, nil, windows.SW_SHOWMINNOACTIVE)
+	return windows.ShellExecute(0, verb, file, args, nil, show)
 }
 
 // isTerminal — stdin и stdout — консоль (конвейер, файл и NUL — нет).

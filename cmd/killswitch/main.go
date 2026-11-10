@@ -44,6 +44,11 @@ func systemDeps() deps {
 		admin:    isAdmin,
 		elevate:  elevateFunc,
 		host:     window.SystemHost(),
+
+		desktop:       isDesktop,
+		installSelf:   installSelf,
+		uninstallSelf: uninstallSelf,
+		alert:         alert,
 	}
 }
 

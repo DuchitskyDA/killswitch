@@ -20,7 +20,19 @@ import (
 // enforceInterval — пересчёт наблюдателя без событий.
 const enforceInterval = 60 * time.Second
 
+// uninstall снимает правила и state.json; где программа ставится в систему (Windows) — вместе с установкой:
+// служба до снятия правил (иначе вернёт их), ярлык, запись в «Приложения» и файлы — после.
 func (a *app) uninstall() error {
+	if a.d.elevate != nil && a.d.admin != nil && !a.d.admin() {
+		return a.needAdmin("uninstall", "снятие продолжится с правами администратора")
+	}
+	if a.d.uninstallSelf == nil {
+		return a.removeRules()
+	}
+	return a.d.uninstallSelf(a.removeRules)
+}
+
+func (a *app) removeRules() error {
 	release, err := a.withLock()
 	if err != nil {
 		return err
