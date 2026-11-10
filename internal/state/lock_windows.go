@@ -20,16 +20,11 @@ func LockName(string) string { return `Global\killswitch` }
 // Acquire захватывает именованный mutex. WAIT_ABANDONED (прежний владелец умер) — захват: сбой разберёт журнал намерения.
 // Горутина остаётся на своём потоке ОС до Release.
 func Acquire(name string, wait bool) (*Lock, error) {
-	sd, err := windows.SecurityDescriptorFromString(lockSDDL)
-	if err != nil {
-		return nil, fmt.Errorf("mutex %s: дескриптор: %w", name, err)
-	}
-	sa := &windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
 	runtime.LockOSThread()
-	h, err := windows.CreateMutex(sa, false, windows.StringToUTF16Ptr(name))
-	if h == 0 {
+	h, err := createLockMutex(name)
+	if err != nil {
 		runtime.UnlockOSThread()
-		return nil, fmt.Errorf("mutex %s: %w", name, err)
+		return nil, err
 	}
 	timeout := uint32(windows.INFINITE)
 	if !wait {
@@ -53,4 +48,18 @@ func Acquire(name string, wait bool) (*Lock, error) {
 		}
 		return cerr
 	}}, nil
+}
+
+// createLockMutex создаёт или открывает mutex с дескриптором lockSDDL.
+func createLockMutex(name string) (windows.Handle, error) {
+	sd, err := windows.SecurityDescriptorFromString(lockSDDL)
+	if err != nil {
+		return 0, fmt.Errorf("mutex %s: дескриптор: %w", name, err)
+	}
+	sa := &windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
+	h, err := windows.CreateMutex(sa, false, windows.StringToUTF16Ptr(name))
+	if h == 0 {
+		return 0, fmt.Errorf("mutex %s: %w", name, err)
+	}
+	return h, nil
 }
