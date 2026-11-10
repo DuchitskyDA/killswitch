@@ -18,6 +18,17 @@ type Iface struct {
 	Up                       bool
 	Physical                 bool
 	Addrs                    []netip.Prefix
+	// DefaultRoute4/6 — у интерфейса есть маршрут по умолчанию семейства (в любой таблице маршрутов). Физический
+	// интерфейс без него (vEthernet (nat) Hyper-V/WSL, docker0) в интернет не ведёт: check его семейство пропускает.
+	DefaultRoute4, DefaultRoute6 bool
+}
+
+// DefaultRoute — есть ли маршрут по умолчанию семейства v4 (true) или v6 (false).
+func (i Iface) DefaultRoute(v4 bool) bool {
+	if v4 {
+		return i.DefaultRoute4
+	}
+	return i.DefaultRoute6
 }
 
 // SourceAddr — адрес интерфейса семейства v4 (true) или v6 (false), кроме link-local v6.

@@ -29,6 +29,8 @@ func (b *Backend) Snapshot(p policy.Policy) (env.Env, error) {
 	if err != nil {
 		return env.Env{}, err
 	}
+	rows, err := defaultRouteRows()
+	markDefaultRoutes(ifaces, rows, err)
 	e := env.Env{OS: "windows", Ifaces: ifaces, DHCPDNS: dns, Health: env.HealthUnknown}
 	if e.Programs, err = programs(p); err != nil {
 		return env.Env{}, err
@@ -134,18 +136,27 @@ func resolve(p policy.Policy) (map[string][]netip.Addr, map[string]string) {
 	return resolved, errs
 }
 
-// routes — эффективный интерфейс к адресам Endpoints и dns.health.
-func routes(p policy.Policy, e env.Env) map[netip.Addr]env.Route {
-	var targets []netip.Addr
-	for _, ep := range p.Tunnel.Endpoints {
-		if a, ok := ep.Addr(); ok {
-			targets = append(targets, a)
+// defaultRouteRows — маршруты по умолчанию (0.0.0.0/0, ::/0) таблицы маршрутов: интерфейс и семейство.
+func defaultRouteRows() ([]routeRow, error) {
+	var rows []routeRow
+	for _, fam := range []uint16{xwin.AF_INET, xwin.AF_INET6} {
+		var t *xwin.MibIpForwardTable2
+		if err := xwin.GetIpForwardTable2(fam, &t); err != nil {
+			return nil, fmt.Errorf("GetIpForwardTable2: %w", err)
 		}
-		targets = append(targets, e.Resolved[ep.Host]...)
+		for _, r := range t.Rows() {
+			if r.DestinationPrefix.PrefixLength == 0 {
+				rows = append(rows, routeRow{LUID: r.InterfaceLuid, V4: fam == xwin.AF_INET})
+			}
+		}
+		xwin.FreeMibTable(unsafe.Pointer(t))
 	}
-	if p.Health != nil {
-		targets = append(targets, p.Health.Addr.Addr())
-	}
+	return rows, nil
+}
+
+// routes — эффективный интерфейс к адресам целей check, Endpoints и dns.health.
+func routes(p policy.Policy, e env.Env) map[netip.Addr]env.Route {
+	targets := routeTargets(p, e)
 	tunnel := map[int]bool{}
 	for _, i := range e.MatchIfaces(p.Tunnel.Interfaces) {
 		tunnel[i.Index] = true

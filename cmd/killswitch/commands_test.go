@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,6 +81,15 @@ func TestCheckBlockedIsOK(t *testing.T) {
 	h.fb.Dropped = true
 	eq(t, h.run("check"), exitOK)
 	eq(t, strings.Contains(h.out.String(), "итог: BLOCKED"), true)
+}
+
+// Маршрут к цели через туннель — baseline по маршруту, без привязки к TUN (перенаправление клиента).
+func TestCheckBaselineByRouteWhenRouteViaTunnel(t *testing.T) {
+	h := newHarness(t, baseConfig)
+	h.fb.Env.Routes = map[netip.Addr]env.Route{netip.MustParseAddr("203.0.113.130"): {IfaceIndex: 7, ViaTunnel: true}}
+	h.fb.Dropped = true
+	eq(t, h.run("check"), exitOK)
+	eq(t, h.prober.routed, len(probe.Services))
 }
 
 func TestCheckRulesRemovedIsLeak(t *testing.T) {

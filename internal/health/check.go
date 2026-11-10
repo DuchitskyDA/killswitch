@@ -39,17 +39,55 @@ func Gate(e env.Env, p policy.Policy) (env.Iface, error) {
 	return env.Iface{}, errors.New("интерфейс туннеля маршрута к dns.health не поднят")
 }
 
-// Check — одна проверка: HTTP GET через сокет, привязанный к туннелю; здоровье — ответ, начинающийся с "HTTP/",
-// не позже Timeout. Локальный SYN-ACK от TUN без ответа сервера здоровьем не считается.
-func Check(ctx context.Context, h policy.HealthURL, tun env.Iface, bind Binder) error {
+// Check — одна проверка: HTTP GET к dns.health по эффективному маршруту через туннель tun (Gate: маршрут через него)
+// с проверкой адреса-источника; здоровье — ответ, начинающийся с "HTTP/", не позже Timeout. Без привязки к TUN:
+// перенаправление клиента (sing-box auto_redirect) ломает обмен привязанного сокета. Локальный SYN-ACK от TUN без
+// ответа сервера здоровьем не считается.
+func Check(ctx context.Context, h policy.HealthURL, tun env.Iface) error {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
-	d := net.Dialer{Control: bind(tun)}
-	return HTTPGet(ctx, &d, h.Addr, h.Path)
+	return HTTPGet(ctx, RouteDialer{Tun: tun}, h.Addr, h.Path)
+}
+
+// Dialer открывает соединение: *net.Dialer или RouteDialer.
+type Dialer interface {
+	DialContext(ctx context.Context, network, address string) (net.Conn, error)
+}
+
+// RouteDialer — соединение без привязки к интерфейсу, по эффективному маршруту. Принимается, только если его
+// адрес-источник — адрес Tun: маршрут, сменившийся после снимка, даёт провал, а не обмен мимо туннеля.
+type RouteDialer struct{ Tun env.Iface }
+
+// DialContext — net.Dialer без Control и проверка адреса-источника.
+func (r RouteDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	if !r.owns(conn.LocalAddr()) {
+		conn.Close()
+		return nil, fmt.Errorf("соединение ушло не через туннель %s: адрес-источник %s", r.Tun.Name, conn.LocalAddr())
+	}
+	return conn, nil
+}
+
+func (r RouteDialer) owns(local net.Addr) bool {
+	ap, err := netip.ParseAddrPort(local.String())
+	if err != nil {
+		return false
+	}
+	src := ap.Addr().Unmap().WithZone("")
+	for _, p := range r.Tun.Addrs {
+		if p.Addr().Unmap().WithZone("") == src {
+			return true
+		}
+	}
+	return false
 }
 
 // HTTPGet открывает TCP через d и проверяет, что сервер ответил строкой статуса HTTP.
-func HTTPGet(ctx context.Context, d *net.Dialer, addr netip.AddrPort, path string) error {
+func HTTPGet(ctx context.Context, d Dialer, addr netip.AddrPort, path string) error {
 	conn, err := d.DialContext(ctx, "tcp", addr.String())
 	if err != nil {
 		return err
@@ -78,10 +116,10 @@ func Exchange(conn net.Conn, host, path string) error {
 }
 
 // Step — одна проверка и учёт её итога в машине.
-func (m *Machine) Step(ctx context.Context, now time.Time, e env.Env, p policy.Policy, bind Binder) env.HealthState {
+func (m *Machine) Step(ctx context.Context, now time.Time, e env.Env, p policy.Policy) env.HealthState {
 	tun, err := Gate(e, p)
 	if err == nil {
-		err = Check(ctx, *p.Health, tun, bind)
+		err = Check(ctx, *p.Health, tun)
 	}
 	return m.Observe(now, err == nil)
 }

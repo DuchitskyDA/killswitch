@@ -268,6 +268,11 @@ func (s *settings) setDNS(mode policy.DNSMode, resolvers *[]string) {
 }
 
 func (s *settings) tunnelUp() {
+	if s.m.caps.OS == "linux" {
+		// sing-box auto_redirect перехватывает трафик nft, а маршрут к адресу проверки идёт через физику: здоровье
+		// туннеля не поднимается (ограничение описано в README).
+		s.m.printf("с sing-box auto_redirect режим tunnel-up не поднимается — используйте open или свои резолверы\n")
+	}
 	label := "Адрес проверки туннеля http://<ip>:<порт>/<путь>"
 	if h := s.cfg.DNS.Health; h != nil {
 		label += " (сейчас " + *h + ", пусто — оставить) "

@@ -36,7 +36,7 @@ type Check struct {
 }
 
 // Scenarios — порядок строк таблицы: живые сценарии эпика, 10 (enforce восстанавливает), рев. 6 и открытые вопросы ks-linux.
-var Scenarios = []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "r6-маршрут", "r6-зомби", "(а)", "(б)", "(в)", "(г)"}
+var Scenarios = []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "r6-маршрут", "r6-зомби", "(а)", "(б)", "(в)", "(г)", ScenarioNoDefault}
 
 // Cell — итог ячейки таблицы.
 type Cell struct {
@@ -351,4 +351,21 @@ func XrayClient(password, iface string) ([]byte, error) {
 			"streamSettings": map[string]any{"sockopt": map[string]any{"interface": topo.PhysIf}},
 		}},
 	}, "", "  ")
+}
+
+// ScenarioNoDefault — ks-probe (в): физический интерфейс без маршрута по умолчанию check пропускает с пометкой.
+const ScenarioNoDefault = "без default"
+
+// RedirectCheckOK — (б): при перенаправлении клиента (sing-box auto_redirect) check даёт 0 или 5 по правилам ks-probe
+// (перехваченная проба — SKIPPED, baseline без маршрута через туннель — INCONCLUSIVE), но не ложный LEAK.
+func RedirectCheckOK(out string, code int) bool {
+	if code != 0 && code != 5 {
+		return false
+	}
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(l), "LEAK") {
+			return false
+		}
+	}
+	return true
 }

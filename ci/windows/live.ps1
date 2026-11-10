@@ -35,11 +35,11 @@ if (Get-NetRoute -DestinationPrefix '::/0' -ErrorAction SilentlyContinue | Where
 }
 $nat = Get-NetAdapter -Name 'vEthernet (nat)' -ErrorAction SilentlyContinue
 if ($nat) {
-    # Второй «физический» адаптер раннера — Hyper-V NAT без маршрута к цели: пробы через него без ответа и без
-    # отброса (INCONCLUSIVE). Факт фиксируется, затем адаптер выключается на одноразовой ВМ для проверки кода 0.
+    # Второй «физический» адаптер раннера — Hyper-V NAT без маршрута по умолчанию: check пропускает его пробы с
+    # пометкой (SKIPPED, ks-probe (в)) и итог считает по остальным — код 0. Адаптер не выключается.
     $out = & $KsExe check 2>&1 | Out-String; $code = $LASTEXITCODE; Write-Host $out
-    Result 'S9.check-with-nat-adapter' 'INFO' "check при vEthernet (nat): код $code"
-    Disable-NetAdapter -Name 'vEthernet (nat)' -Confirm:$false
+    Check 'S9.check-with-nat-adapter' ($code -eq 0 -and $out -match 'SKIPPED vEthernet \(nat\) v4 ') `
+        "check при vEthernet (nat): код $code (ждали 0), SKIPPED по адаптеру без маршрута по умолчанию"
 }
 Expect-Code 'S9.check-tunnel-up' 0 { & $KsExe check }
 

@@ -1,6 +1,7 @@
 package health
 
 import (
+	"context"
 	"net"
 	"net/netip"
 	"testing"
@@ -65,5 +66,40 @@ func TestGateTunnelDownFails(t *testing.T) {
 	e := env.Env{Ifaces: []env.Iface{{Name: "wg0", Index: 7}},
 		Routes: map[netip.Addr]env.Route{healthAddr.Addr(): {IfaceIndex: 7, ViaTunnel: true}}}
 	_, err := Gate(e, gatePolicy())
+	hasErr(t, err)
+}
+
+// httpOnLoopback — HTTP-сервер на 127.0.0.1, отвечает статусом.
+func httpOnLoopback(t *testing.T) netip.AddrPort {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	noErr(t, err)
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			buf := make([]byte, 512)
+			_, _ = c.Read(buf)
+			_, _ = c.Write([]byte("HTTP/1.0 204 No Content\r\n\r\n"))
+			c.Close()
+		}
+	}()
+	return ln.Addr().(*net.TCPAddr).AddrPort()
+}
+
+var loTun = env.Iface{Name: "lo", Up: true, Addrs: []netip.Prefix{netip.MustParsePrefix("127.0.0.1/8")}}
+
+func TestCheckByRouteFromTunnelSourceIsHealthy(t *testing.T) {
+	addr := httpOnLoopback(t)
+	noErr(t, Check(context.Background(), policy.HealthURL{Addr: addr, Path: "/"}, loTun))
+}
+
+func TestRouteDialerRejectsSourceOutsideTunnel(t *testing.T) {
+	addr := httpOnLoopback(t)
+	other := env.Iface{Name: "wg0", Addrs: []netip.Prefix{netip.MustParsePrefix("198.18.0.1/32")}}
+	_, err := RouteDialer{Tun: other}.DialContext(context.Background(), "tcp", addr.String())
 	hasErr(t, err)
 }

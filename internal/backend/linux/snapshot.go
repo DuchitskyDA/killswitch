@@ -43,6 +43,7 @@ func (b *Backend) Snapshot(p policy.Policy) (env.Env, error) {
 		i := &e.Ifaces[k]
 		i.Physical = i.Name != "lo" && !tunnels[i.Name]
 	}
+	b.markDefaultRoutes(e.Ifaces)
 	boot, err := os.ReadFile(b.path(bootIDFile))
 	if err != nil || strings.TrimSpace(string(boot)) == "" {
 		return env.Env{}, fmt.Errorf("boot id: %v", err)
@@ -120,8 +121,58 @@ func (b *Backend) resolveEndpoints(p policy.Policy, e *env.Env) {
 	}
 }
 
+// markDefaultRoutes — есть ли у интерфейса маршрут по умолчанию v4/v6 в любой таблице (`ip -j route show default
+// table all`; multipath — по nexthops; unreachable, blackhole, prohibit — нет). Таблицу не прочитать — маршрут
+// считается у каждого: пробы check идут, как раньше.
+func (b *Backend) markDefaultRoutes(ifaces []env.Iface) {
+	for _, v4 := range []bool{true, false} {
+		fam := "-6"
+		if v4 {
+			fam = "-4"
+		}
+		devs, err := b.defaultDevs(fam)
+		for k := range ifaces {
+			has := err != nil || devs[ifaces[k].Name]
+			if v4 {
+				ifaces[k].DefaultRoute4 = has
+			} else {
+				ifaces[k].DefaultRoute6 = has
+			}
+		}
+	}
+}
+
+func (b *Backend) defaultDevs(fam string) (map[string]bool, error) {
+	out, err := b.run("", "ip", fam, "-j", "route", "show", "default", "table", "all")
+	if err != nil {
+		return nil, err
+	}
+	var routes []struct {
+		Type     string `json:"type"`
+		Dev      string `json:"dev"`
+		Nexthops []struct {
+			Dev string `json:"dev"`
+		} `json:"nexthops"`
+	}
+	if err := json.Unmarshal([]byte(out), &routes); err != nil {
+		return nil, err
+	}
+	devs := map[string]bool{}
+	for _, r := range routes {
+		if r.Type != "" && r.Type != "unicast" {
+			continue
+		}
+		devs[r.Dev] = true
+		for _, h := range r.Nexthops {
+			devs[h.Dev] = true
+		}
+	}
+	delete(devs, "")
+	return devs, nil
+}
+
 func routeTargets(p policy.Policy, e env.Env) []netip.Addr {
-	var out []netip.Addr
+	out := append([]netip.Addr(nil), p.Check.Targets...)
 	if p.Health != nil {
 		out = append(out, p.Health.Addr.Addr())
 	}

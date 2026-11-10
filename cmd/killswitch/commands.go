@@ -139,7 +139,7 @@ func (a *app) check(ctx context.Context) error {
 	if err != nil {
 		return fail(exitApply, "статус backend: %v", err)
 	}
-	in := probe.Input{Targets: p.Check.Targets, Structural: s.Structural}
+	in := probe.Input{Targets: p.Check.Targets, Routes: e.Routes, Structural: s.Structural}
 	for _, i := range a.reportTunnels(p, e) {
 		if i.Up {
 			in.Tunnels = append(in.Tunnels, i)
@@ -231,5 +231,5 @@ func (a *app) healthChanged(ctx context.Context, m *health.Machine, p policy.Pol
 	if err != nil {
 		return m.Observe(a.d.now(), false) != before
 	}
-	return m.Step(ctx, a.d.now(), e, p, health.Binder(a.b.BindControl)) != before
+	return m.Step(ctx, a.d.now(), e, p) != before
 }

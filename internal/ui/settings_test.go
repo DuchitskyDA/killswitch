@@ -225,3 +225,21 @@ func TestTrustAddInStrictOnlyToEndpoints(t *testing.T) {
 	eq(t, p.WithMode(policy.ModeOn).Validate(policy.CapabilitiesFor("windows")), nil)
 	eq(t, p.Trust, []policy.Trust{{Kind: policy.KindProgram, Value: `C:\x.exe`, Destinations: policy.DestEndpoints}})
 }
+
+// Решение владельца «Описать ограничение»: при выборе tunnel-up на Linux меню предупреждает про sing-box auto_redirect.
+const autoRedirectHint = "с sing-box auto_redirect режим tunnel-up не поднимается — используйте open или свои резолверы"
+
+func TestDNSTunnelUpOnLinuxWarnsAutoRedirect(t *testing.T) {
+	out := runMenu("linux", &fakeActions{}, "4", "3", "2", "", "0", "0", "0", "0")
+	contains(t, out, autoRedirectHint, true)
+}
+
+func TestDNSTunnelUpOnWindowsWithoutAutoRedirectHint(t *testing.T) {
+	out := runMenu("windows", &fakeActions{}, "5", "3", "2", "", "0", "0", "0", "0")
+	contains(t, out, autoRedirectHint, false)
+}
+
+func TestDNSTunnelUpOnDarwinWithoutAutoRedirectHint(t *testing.T) {
+	out := runMenu("darwin", &fakeActions{}, "4", "3", "2", "", "0", "0", "0", "0")
+	contains(t, out, autoRedirectHint, false)
+}

@@ -56,7 +56,7 @@ func TestConfigsValidate(t *testing.T) {
 	}
 	for name, c := range Clients {
 		for _, o := range []ConfigOpts{{}, {Strict: true}, {TunnelUpDNS: true}, {Strict: true, CgroupPath: "system.slice/x.scope/ksl-xray",
-			ExtraEndpoints: []string{"203.0.113.130:443/udp"}}} {
+			ExtraEndpoints: []string{"203.0.113.130:443/udp", "[2001:db8:b::2]:443/udp", "203.0.113.130:53/tcp"}}} {
 			cfg, err := policy.ParseConfig([]byte(c.Config(o)))
 			if err != nil {
 				t.Fatalf("%s %+v: %v", name, o, err)
@@ -113,5 +113,33 @@ func TestStripTable(t *testing.T) {
 	want := "table inet sing-box {\n\tchain a {\n\t}\n}\ntable ip nat {\n}\n"
 	if got := StripTable(in, "inet killswitch"); got != want {
 		t.Errorf("StripTable:\n%s\nждали:\n%s", got, want)
+	}
+}
+
+// Строка «без default» (ks-probe (в)) видна в сводке, как и прочие сценарии.
+func TestRenderTableNoDefaultRow(t *testing.T) {
+	out := RenderTable(Summarize([]Check{
+		{Scenario: ScenarioNoDefault, Client: "wireguard", Family: "-", Name: "check", Status: Fail, Detail: "код 5"},
+	}))
+	if !strings.Contains(out, "| "+ScenarioNoDefault+" |") || !strings.Contains(out, "(FAIL): check: код 5") {
+		t.Errorf("таблица:\n%s", out)
+	}
+}
+
+// (б) при перенаправлении клиента: check даёт 0 или 5 по правилам ks-probe, но не ложный LEAK.
+func TestRedirectCheckOK(t *testing.T) {
+	inconclusive := "INCONCLUSIVE c0 v4 http 203.0.113.130:80: цель не ответила через туннель: i/o timeout\nитог: INCONCLUSIVE\n"
+	skipped := "SKIPPED c0 v4 http 203.0.113.130:80: перехвачено клиентом туннеля, через физический адаптер не ушло\n" +
+		"BLOCKED c0 v4 udp-echo 203.0.113.130:443: отброшено нашим правилом\nитог: BLOCKED\n"
+	leak := "LEAK c0 v4 http 203.0.113.130:80: сервер ответил мимо туннеля\nитог: LEAK\n"
+	cases := []struct {
+		out  string
+		code int
+		want bool
+	}{{inconclusive, 5, true}, {skipped, 0, true}, {leak, 4, false}, {leak, 5, false}, {"ошибка запуска", 1, false}}
+	for _, c := range cases {
+		if got := RedirectCheckOK(c.out, c.code); got != c.want {
+			t.Errorf("код %d, %q: %v, ждали %v", c.code, c.out, got, c.want)
+		}
 	}
 }
