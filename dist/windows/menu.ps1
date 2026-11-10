@@ -72,8 +72,8 @@ function Assert-TrustedDir([string]$Dir) {
 }
 
 # Точные права каталога: владелец — администраторы; полный доступ — администраторам и SYSTEM, чтение — пользователям;
-# наследование от родителя снято, прежние записи не сохраняются. Вложенное получает только унаследованные права.
-function Set-ExactAcl([string]$Dir) {
+# наследование от родителя снято, прежние записи не сохраняются.
+function New-ExactAcl {
     $acl = New-Object Security.AccessControl.DirectorySecurity
     $acl.SetOwner((New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544'))
     $acl.SetAccessRuleProtection($true, $false)
@@ -82,7 +82,22 @@ function Set-ExactAcl([string]$Dir) {
         $sid = New-Object Security.Principal.SecurityIdentifier $rule[0]
         $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($sid, $rule[1], $inherit, 'None', 'Allow')))
     }
-    Set-Acl -LiteralPath $Dir -AclObject $acl
+    return $acl
+}
+
+# Каталог только для администраторов. Нового каталога с открытыми правами не бывает ни на миг: он создаётся сразу с
+# точными правами. Существующий принимается только доверенным — и до создания, и после: каталог, который кто-то
+# успел подложить между проверкой и созданием, отвергается до смены владельца и до чтения его содержимого.
+function Protect-Dir([string]$Dir) {
+    Assert-TrustedDir $Dir
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        [void][IO.FileSystemAclExtensions]::CreateDirectory((New-ExactAcl), $Dir)
+    } else {
+        [void][IO.Directory]::CreateDirectory($Dir, (New-ExactAcl))
+    }
+    Assert-TrustedDir $Dir
+    Set-Acl -LiteralPath $Dir -AclObject (New-ExactAcl)
+    # Вложенное (прежняя установка): владелец — администраторы, права — только унаследованные.
     if (Get-ChildItem -LiteralPath $Dir -Force | Select-Object -First 1) {
         icacls (Join-Path $Dir '*') /setowner '*S-1-5-32-544' /T /L /Q | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "владелец вложенного в $Dir не задан: icacls, код $LASTEXITCODE" }
@@ -96,11 +111,7 @@ function Install-Killswitch {
     if (-not (Test-Path $Source)) { throw "нет исходного killswitch.exe: $Source" }
     # Каталоги — только администраторам и SYSTEM: копия бинарника для оффлайн-снятия, config.toml и state.json не
     # подменить. Права ставятся до копирования и до чтения существующих настроек.
-    foreach ($dir in $InstallDir, $StateDir) {
-        Assert-TrustedDir $dir
-        New-Item -ItemType Directory -Force $dir | Out-Null
-        Set-ExactAcl $dir
-    }
+    foreach ($dir in $InstallDir, $StateDir) { Protect-Dir $dir }
     $svc = Get-Service $ServiceName -ErrorAction SilentlyContinue
     if ($svc -and $svc.Status -ne 'Stopped') { Stop-Service $ServiceName -Force }
     Copy-Item $Source $Exe -Force
