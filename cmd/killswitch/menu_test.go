@@ -101,6 +101,16 @@ func TestMenuHeaderShowsModeAndTunnel(t *testing.T) {
 	eq(t, hd.Tunnels[0].Up, true)
 }
 
+// Установка на месте, а правил в системе нет (таблицу сняли): шапка не должна говорить «защита включена».
+func TestMenuHeaderInactiveWhenRulesGone(t *testing.T) {
+	h := newHarness(t, baseConfig)
+	eq(t, h.run("on"), exitOK)
+	h.fb.RulesGone = true
+	hd := h.actions().Header()
+	eq(t, hd.Mode, policy.ModeOn)
+	eq(t, hd.Active, false)
+}
+
 func TestMenuHeaderShowsStructuralLeak(t *testing.T) {
 	h := newHarness(t, baseConfig)
 	h.fb.Structural = []probe.StructuralFinding{{Kind: "wfp-tie", Detail: "чужой permit"}}

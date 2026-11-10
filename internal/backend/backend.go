@@ -35,9 +35,9 @@ type ControlFunc = health.ControlFunc
 // включает on (fail-closed). Hash пуст только при полном отсутствии установки; в off (пустой якорь,
 // принимающая таблица, permit-all) это хеш off-набора.
 type Status struct {
-	Active     bool
+	Active     bool // установка есть: правила или постоянный слой (файлы, юниты, provider)
 	Mode       policy.Mode
-	Rules      int
+	Rules      int    // правил в системе сейчас; 0 при Active — установка без действующих правил
 	Hash       string // хеш фактического набора, см. HashOf
 	Details    string
 	Structural []probe.StructuralFinding // WFP-ничья, pf-сосед, quick выше якоря, якорь недостижим, pf disabled
