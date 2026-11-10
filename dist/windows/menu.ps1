@@ -1,5 +1,6 @@
-﻿# killswitch для Windows: установка и ярлык. Меню и все настройки — в самом killswitch.exe
-# (запуск без аргументов); здесь только копия в каталог администратора, служба enforce и ярлык.
+﻿# killswitch для Windows: установка и ярлык. Окно (killswitch window), меню в терминале (запуск без
+# аргументов) и все настройки — в самом killswitch.exe; здесь только копия в каталог администратора,
+# служба enforce и ярлык окна.
 #   menu.ps1 [-Action install] [-Source <путь к killswitch.exe>] [-Config <config.toml>]
 #   menu.ps1 -Action uninstall | shortcut
 param(
@@ -44,7 +45,7 @@ function Install-Killswitch {
     foreach ($dir in $InstallDir, $StateDir) {
         icacls $dir /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' | Out-Null
     }
-    # Настройки уже есть — защита включается сразу; иначе их задают в меню.
+    # Настройки уже есть — защита включается сразу; иначе их задают в окне.
     if (Test-Path $StateConfig) {
         $code = Invoke-Killswitch @('on')
         if ($code -ne 0) { throw "killswitch on: код $code" }
@@ -57,7 +58,7 @@ function Install-Killswitch {
     Start-Service $ServiceName
     New-Shortcut
     Write-Host "установлено: $Exe, служба $ServiceName запущена"
-    if (-not (Test-Path $StateConfig)) { Write-Host 'настройки: откройте ярлык killswitch, пункт «Настройки»' }
+    if (-not (Test-Path $StateConfig)) { Write-Host 'настройки: откройте ярлык killswitch — в окне задайте и сохраните настройки' }
 }
 
 function Uninstall-Killswitch {
@@ -71,14 +72,16 @@ function Uninstall-Killswitch {
     Write-Host "правила сняты, служба удалена; копия $Exe оставлена для повторного снятия"
 }
 
-# Ярлык открывает меню killswitch.exe сразу с правами администратора (флаг «Запуск от имени администратора»).
+# Ярлык открывает окно (killswitch window) сразу с правами администратора (флаг «Запуск от имени
+# администратора»). Консоль ярлыка свёрнута: в ней работает локальный сервер окна, пока окно открыто.
 function New-Shortcut {
     if (-not (Test-Path $Exe)) { throw "killswitch не установлен: нет $Exe (menu.ps1 -Action install)" }
     $lnk = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'killswitch.lnk'
     $sh = New-Object -ComObject WScript.Shell
     $s = $sh.CreateShortcut($lnk)
     $s.TargetPath = $Exe
-    $s.Arguments = ''
+    $s.Arguments = 'window'
+    $s.WindowStyle = 7 # свёрнутое окно консоли
     $s.WorkingDirectory = $InstallDir
     $s.IconLocation = $Exe
     $s.Save()

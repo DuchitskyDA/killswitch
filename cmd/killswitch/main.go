@@ -14,6 +14,7 @@ import (
 	"github.com/DuchitskyDA/killswitch/internal/health"
 	"github.com/DuchitskyDA/killswitch/internal/probe"
 	"github.com/DuchitskyDA/killswitch/internal/state"
+	"github.com/DuchitskyDA/killswitch/internal/window"
 	"github.com/DuchitskyDA/killswitch/profiles"
 )
 
@@ -42,6 +43,7 @@ func systemDeps() deps {
 		terminal: isTerminal,
 		admin:    isAdmin,
 		elevate:  elevateFunc,
+		host:     window.SystemHost(),
 	}
 }
 

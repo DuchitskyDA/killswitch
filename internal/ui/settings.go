@@ -544,26 +544,26 @@ func trimExe(name string) string {
 	return name
 }
 
-// runningName — строка списка запущенных: имя и где лежит его файл.
-type runningName struct {
-	name  string
-	paths []string
+// RunningName — строка списка запущенных: имя и где лежит его файл.
+type RunningName struct {
+	Name  string
+	Paths []string
 }
 
-// runningNames — по одной строке на имя (без учёта регистра), в порядке списка; имя, непригодное для
-// repair.names, пропускается.
-func runningNames(progs []backend.Program) []runningName {
-	var out []runningName
+// RunningNames — по одной строке на имя (без учёта регистра), в порядке списка; имя, непригодное для
+// repair.names, пропускается. Одна группировка для меню и окна.
+func RunningNames(progs []backend.Program) []RunningName {
+	var out []RunningName
 	for _, p := range progs {
 		if policy.CheckProgramName(p.Name) != nil {
 			continue
 		}
-		i := slices.IndexFunc(out, func(r runningName) bool { return strings.EqualFold(r.name, p.Name) })
+		i := slices.IndexFunc(out, func(r RunningName) bool { return strings.EqualFold(r.Name, p.Name) })
 		if i < 0 {
-			out = append(out, runningName{name: p.Name})
+			out = append(out, RunningName{Name: p.Name})
 			i = len(out) - 1
 		}
-		out[i].paths = append(out[i].paths, p.Path)
+		out[i].Paths = append(out[i].Paths, p.Path)
 	}
 	return out
 }
@@ -574,7 +574,7 @@ func (s *settings) pickRunning() {
 		s.m.report(err)
 		return
 	}
-	names := runningNames(progs)
+	names := RunningNames(progs)
 	if len(names) == 0 {
 		s.m.printf("запущенные программы не найдены\n")
 		return
@@ -582,16 +582,16 @@ func (s *settings) pickRunning() {
 	s.m.printf("\nЗапущенные программы\n")
 	for i, r := range names {
 		more := ""
-		if len(r.paths) > 1 {
-			more = fmt.Sprintf(" (и ещё %d)", len(r.paths)-1)
+		if len(r.Paths) > 1 {
+			more = fmt.Sprintf(" (и ещё %d)", len(r.Paths)-1)
 		}
-		s.m.printf("    %d. %s — %s%s\n", i+1, r.name, r.paths[0], more)
+		s.m.printf("    %d. %s — %s%s\n", i+1, r.Name, r.Paths[0], more)
 	}
 	i, ok := s.m.pickLine(len(names))
 	if !ok {
 		return
 	}
-	name, cur := names[i].name, strList(s.cfg.Repair.Names)
+	name, cur := names[i].Name, strList(s.cfg.Repair.Names)
 	if slices.ContainsFunc(cur.items, func(x string) bool { return strings.EqualFold(x, name) }) {
 		s.m.printf("%s уже в списке\n", name)
 		return

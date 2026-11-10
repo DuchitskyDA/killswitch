@@ -12,6 +12,7 @@ English summary — [в конце](#english).
 
 - [Что делает и чего не делает](#что-делает-и-чего-не-делает)
 - [Установка](#установка)
+- [Окно](#окно)
 - [Меню](#меню)
 - [Команды и коды возврата](#команды-и-коды-возврата)
 - [config.toml](#configtoml)
@@ -89,14 +90,15 @@ go build -o killswitch ./cmd/killswitch        # на Windows: -o killswitch.exe
 `sha256sum -c SHA256SUMS`. Файлы называются `killswitch-<ос>-<арх>`. Перед установкой переименуйте свой в
 `killswitch` (`killswitch.exe`).
 
-Защиту включает `on`: из меню («Включить защиту») или командой. Перед этим проверьте, что профиль или `[[trust]]`
-доверяет клиенту туннеля. Иначе клиент не дойдёт до своего сервера, и выхода в сеть не будет совсем.
+Защиту включает `on`: из окна, из меню («Включить защиту») или командой. Перед этим проверьте, что профиль или
+`[[trust]]` доверяет клиенту туннеля. Иначе клиент не дойдёт до своего сервера, и выхода в сеть не будет совсем.
 
 ### Linux
 
 ```sh
 sudo install -m 0755 killswitch /usr/local/bin/killswitch
 sudo killswitch            # меню: «Настройки» → «Применить и сохранить» → «Включить защиту»
+sudo killswitch window     # то же в окне, если есть графический сеанс
 ```
 
 Первая `on` кладёт копию бинарника в `/var/lib/killswitch/bin/killswitch`, а постоянный набор правил — в
@@ -108,6 +110,7 @@ sudo killswitch            # меню: «Настройки» → «Примен
 ```sh
 sudo install -m 0755 killswitch /usr/local/bin/killswitch
 sudo killswitch            # меню; или sudo killswitch on при готовом config.toml
+sudo killswitch window     # то же в окне
 ```
 
 Первая `on` копирует бинарник и `pfctl` (под именем `killswitchd`) в `/Library/Application Support/killswitch/`. Ещё она
@@ -131,9 +134,9 @@ powershell -ExecutionPolicy Bypass -File .\menu.ps1 -Config .\config.toml # ус
 3. с `-Config` копирует файл в `%ProgramData%\killswitch\config.toml`. Если config.toml там уже есть, сразу выполняет
    `killswitch on`;
 4. регистрирует службу `killswitch` (`killswitch.exe enforce`, автозапуск, перезапуск при сбое) и запускает её;
-5. кладёт на общий рабочий стол ярлык `killswitch`, который открывает меню с правами администратора.
+5. кладёт на общий рабочий стол ярлык `killswitch`, который открывает [окно](#окно) с правами администратора.
 
-Без config.toml защита не включается: откройте ярлык → «Настройки» → «Применить и сохранить» → «Включить защиту».
+Без config.toml защита не включается: откройте ярлык, в окне задайте и сохраните настройки и включите защиту.
 
 Другие действия: `menu.ps1 -Action uninstall` останавливает и удаляет службу и выполняет `killswitch uninstall`
 (копия exe остаётся для повторного снятия); `menu.ps1 -Action shortcut` заново создаёт ярлык.
@@ -146,12 +149,43 @@ sing-box со `strict_route`) держит свой подслой 0xFFFF, на�
 Без `menu.ps1` команда `killswitch on` тоже ставит постоянные фильтры, но службы нет: никто не пересчитает правила,
 когда адаптер туннеля пересоздастся. Ставьте через `menu.ps1`.
 
+## Окно
+
+`killswitch window` открывает окно с теми же действиями, что меню: состояние защиты, режимы, проверка утечек и
+настройки. Окно — страница, встроенная в бинарник. Её отдаёт сам killswitch с адреса `127.0.0.1` на случайном порту,
+наружу этот адрес не виден. Нужны права администратора:
+
+- Windows: ярлык из `menu.ps1` открывает окно сразу от имени администратора. Из консоли — `killswitch window`: без
+  повышения killswitch перезапускает себя через UAC. Окно открывается в Microsoft Edge без адресной строки и вкладок,
+  в отдельном профиле `%LOCALAPPDATA%\killswitch\window`. Нет Edge — страница открывается в браузере по умолчанию.
+- Linux и macOS: `sudo killswitch window`. Страница открывается в браузере по умолчанию от имени пользователя, который
+  вызвал sudo, а не от root.
+
+Пока окно открыто, работает процесс `killswitch window`: на Windows это свёрнутое окно консоли. Закройте окно или
+вкладку — процесс завершится сам: обычно через несколько секунд, самое большее через полторы минуты. Ctrl+C в консоли
+завершает его сразу. Свёрнутое окно продолжает работать.
+
+Чем защищена страница:
+
+- адрес открывается одноразовым ключом из 32 случайных байт. По ключу браузер получает cookie сеанса, без неё любой
+  запрос получает 401. Второй раз ключ не работает: если его предъявит кто-то ещё, окно закрывается с ошибкой;
+- запросы с чужих страниц отвергаются (403): сервер сверяет заголовки `Host`, `Origin` и `Sec-Fetch-Site`;
+- страница не грузит ничего извне и не кешируется.
+
+Если браузер не запустился, killswitch печатает адрес с ключом: откройте его вручную на этой же машине. Окно, которое
+никто не открыл за две минуты, завершается с кодом 3.
+
+На Linux без графического сеанса (сервер, вход по SSH) окна нет: `killswitch window` отвечает «окно не открыть: нет
+графического сеанса» с кодом 2. Там работают меню и команды.
+
+Ключ `-config` на окно не влияет: как и меню, оно работает с config.toml из каталога состояния.
+
 ## Меню
 
 `killswitch` без аргументов в терминале открывает меню. Оно одно на трёх ОС. Нужны права администратора:
 
-- Windows: без повышения killswitch перезапускает себя через UAC, и меню открывается в новом окне. Ярлык из `menu.ps1`
-  сразу запускает его от имени администратора.
+- Windows: без повышения killswitch перезапускает себя через UAC, и меню открывается в новом окне консоли. Ярлык из
+  `menu.ps1` открывает не меню, а [окно](#окно).
 - Linux и macOS: `sudo killswitch`. Без root меню отвечает «нужны права root: запустите sudo killswitch» с кодом 2.
 
 Меню нужен настоящий терминал. В Git Bash и mintty на Windows stdin — канал, а не консоль: killswitch печатает справку
@@ -214,6 +248,7 @@ killswitch [-config путь] <команда>
 | `status` | режим, поколение, фильтры, совпавшие адаптеры, файлы программ починки по именам, WARN и LEAK |
 | `check` | пробы утечки, см. [check](#проверка-утечек-check) |
 | `detect` | найти установленные клиенты по `detect` профилей |
+| `window` | открыть [окно](#окно): состояние, режимы, проверка и настройки на локальной странице |
 | `plan [on\|off\|repair]` | напечатать правила без применения; по умолчанию — записанный режим или on |
 | `enforce` | наблюдатель; его запускает служба |
 | `uninstall` | снять всё наше без конфига и без сети, удалить state.json |
@@ -223,8 +258,8 @@ killswitch [-config путь] <команда>
 | Код | Значение |
 |---|---|
 | 0 | успех; у `check` — все пробы BLOCKED (в простой проверке — утечек не найдено) |
-| 2 | ошибка конфига или аргументов: неизвестная команда, неверный ключ, неподдержанное на этой ОС, нет терминала для меню |
-| 3 | ошибка применения или backend: снимок машины, правила, замок, state.json |
+| 2 | ошибка конфига или аргументов: неизвестная команда, неверный ключ, неподдержанное на этой ОС, нет терминала для меню, нет графического сеанса для окна |
+| 3 | ошибка применения или backend: снимок машины, правила, замок, state.json; окно никто не открыл |
 | 4 | утечка: `check` нашёл LEAK; `status` и `check` — структурная находка |
 | 5 | у `check` нет уверенности: есть INCONCLUSIVE или не было ни одной пробы |
 
@@ -663,12 +698,16 @@ Alternatively, download the `killswitch-<commit>` artifact from a run of the `ci
 `menu.ps1` and `SHA256SUMS`.
 
 - Linux and macOS: `sudo killswitch` opens a terminal menu. Settings → Apply and save → Enable protection. The first
-  `on` installs the systemd units or the LaunchDaemon.
+  `on` installs the systemd units or the LaunchDaemon. `sudo killswitch window` opens the same actions in a window.
 - Windows: put `killswitch.exe` next to `dist/windows/menu.ps1`, stop the tunnel client, run
   `powershell -ExecutionPolicy Bypass -File .\menu.ps1`. It installs to `%ProgramFiles%\killswitch`, registers the
-  `killswitch` service and creates an elevated desktop shortcut that opens the menu.
+  `killswitch` service and creates an elevated desktop shortcut that opens the window.
 
-Commands: `killswitch [-config path] on | off | repair | status | check | detect | plan [mode] | enforce | uninstall`.
+The window (`killswitch window`) is a page embedded in the binary and served from `127.0.0.1` on a random port. It is
+opened with a one-time key and closes together with the browser window.
+
+Commands: `killswitch [-config path] on | off | repair | status | check | detect | window | plan [mode] | enforce |
+uninstall`.
 Exit codes: 0 ok, 2 config error, 3 apply/backend error, 4 leak, 5 inconclusive (`check`). `off` and `repair`
 (Windows only) last until reboot; `uninstall` removes everything without config or network. Without `[check] targets`,
 `check` runs a simple TCP-only test against `example.com`; `[repair] names` lists programs to block by name.

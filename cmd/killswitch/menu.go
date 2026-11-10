@@ -22,7 +22,7 @@ import (
 // menu — killswitch без аргументов в терминале: права администратора, затем меню.
 func (a *app) menu(ctx context.Context) error {
 	if a.d.admin == nil || !a.d.admin() {
-		return a.needAdmin()
+		return a.needAdmin("", "меню откроется в новом окне с правами администратора")
 	}
 	b, err := a.d.backend()
 	if err != nil {
@@ -33,15 +33,16 @@ func (a *app) menu(ctx context.Context) error {
 	return nil
 }
 
-// needAdmin: Windows — перезапуск с повышением (меню откроется в новом окне); Linux и macOS — sudo.
-func (a *app) needAdmin() error {
+// needAdmin — прав нет: Windows — перезапуск команды (пусто — меню) с повышением и строка started;
+// Linux и macOS — просьба запустить через sudo.
+func (a *app) needAdmin(command, started string) error {
 	if a.d.elevate == nil {
-		return fail(exitConfig, "нужны права root: запустите sudo killswitch")
+		return fail(exitConfig, "нужны права root: запустите %s", strings.TrimSpace("sudo killswitch "+command))
 	}
-	if err := a.d.elevate(); err != nil {
+	if err := a.d.elevate(command); err != nil {
 		return fail(exitConfig, "права администратора не получены: %v", err)
 	}
-	fmt.Fprintln(a.d.out, "меню откроется в новом окне с правами администратора")
+	fmt.Fprintln(a.d.out, started)
 	return nil
 }
 
@@ -147,7 +148,7 @@ func (m *menuActions) tunnels(st state.State) ([]ui.Tunnel, []string) {
 		out = append(out, ui.Tunnel{Name: i.Name, Up: i.Up})
 	}
 	if len(out) > 1 {
-		notes = append(notes, "WARN шаблону туннеля соответствует больше одного адаптера: чужой адаптер с тем же именем не отличить")
+		notes = append(notes, severalTunnels)
 	}
 	return out, notes
 }

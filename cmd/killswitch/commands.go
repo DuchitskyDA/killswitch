@@ -122,42 +122,47 @@ func (a *app) printTunnelMatches(st state.State) error {
 	if err != nil {
 		return err
 	}
-	a.reportTunnels(p, e)
+	a.reportTunnels(e.MatchIfaces(p.Tunnel.Interfaces))
 	if a.b.Capabilities().Repair {
 		a.reportRepairNames(p, e)
 	}
 	return nil
 }
 
-func (a *app) reportTunnels(p policy.Policy, e env.Env) []env.Iface {
-	matched := e.MatchIfaces(p.Tunnel.Interfaces)
+// severalTunnels — предупреждение: шаблону туннеля соответствует больше одного адаптера.
+const severalTunnels = "WARN шаблону туннеля соответствует больше одного адаптера: чужой адаптер с тем же именем не отличить"
+
+// reportTunnels печатает совпавшие адаптеры туннеля.
+func (a *app) reportTunnels(matched []env.Iface) {
 	var names []string
 	for _, i := range matched {
 		names = append(names, fmt.Sprintf("%s (index %d, up=%t)", i.Name, i.Index, i.Up))
 	}
 	fmt.Fprintf(a.d.out, "туннель: %s\n", strings.Join(names, ", "))
 	if len(matched) > 1 {
-		fmt.Fprintln(a.d.out, "WARN шаблону туннеля соответствует больше одного адаптера: чужой адаптер с тем же именем не отличить")
+		fmt.Fprintln(a.d.out, severalTunnels)
 	}
-	return matched
 }
 
-func (a *app) check(ctx context.Context) error {
+// checkInput — вход проб по конфигу и снимку машины и совпавшие адаптеры туннеля. В out ничего
+// не печатает: его используют команда check и окно.
+func (a *app) checkInput() (probe.Input, []env.Iface, error) {
 	p, err := a.loadPolicy(policy.ModeOn)
 	if err != nil {
-		return err
+		return probe.Input{}, nil, err
 	}
 	st, _ := state.Load(a.statePath())
 	e, err := a.snapshot(p, st, env.HealthUnknown)
 	if err != nil {
-		return err
+		return probe.Input{}, nil, err
 	}
 	s, err := a.b.Status()
 	if err != nil {
-		return fail(exitApply, "статус backend: %v", err)
+		return probe.Input{}, nil, fail(exitApply, "статус backend: %v", err)
 	}
 	in := probe.Input{Targets: p.Check.Targets, Routes: e.Routes, Structural: s.Structural}
-	for _, i := range a.reportTunnels(p, e) {
+	matched := e.MatchIfaces(p.Tunnel.Interfaces)
+	for _, i := range matched {
 		if i.Up {
 			in.Tunnels = append(in.Tunnels, i)
 		}
@@ -167,6 +172,15 @@ func (a *app) check(ctx context.Context) error {
 			in.Physical = append(in.Physical, i)
 		}
 	}
+	return in, matched, nil
+}
+
+func (a *app) check(ctx context.Context) error {
+	in, matched, err := a.checkInput()
+	if err != nil {
+		return err
+	}
+	a.reportTunnels(matched)
 	if len(in.Targets) == 0 {
 		fmt.Fprintf(a.d.out, "простая проверка: HTTP к %s с каждого физического адаптера и обычным путём ([check] targets не заданы)\n", probe.SimpleHost)
 	}
@@ -196,14 +210,17 @@ func simpleVerdict(res probe.CheckResult) string {
 	case probe.Leak:
 		return "УТЕЧКА (простая проверка)"
 	}
-	reason := "ни одной пробы не выполнено"
+	return "нет уверенности (простая проверка): " + inconclusiveReason(res)
+}
+
+// inconclusiveReason — почему итог не определён: подробность первой пробы без уверенности.
+func inconclusiveReason(res probe.CheckResult) string {
 	for _, r := range res.Probes {
 		if r.Class == probe.Inconclusive {
-			reason = r.Detail
-			break
+			return r.Detail
 		}
 	}
-	return "нет уверенности (простая проверка): " + reason
+	return "ни одной пробы не выполнено"
 }
 
 func (a *app) detect() error {
