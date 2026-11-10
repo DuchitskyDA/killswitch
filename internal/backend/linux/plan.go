@@ -20,9 +20,10 @@ import (
 )
 
 const (
-	table     = "killswitch"
-	denyChain = "deny"
-	restChain = "rest"
+	table       = "killswitch"
+	denyChain   = "deny"
+	restChain   = "rest"
+	egressChain = "egress" // пробы check, дошедшие до физического интерфейса: счётчик на порт — признак выхода
 )
 
 // Ruleset — план nftables. Render — то, что печатает `plan` и от чего считается хеш.
@@ -270,15 +271,28 @@ func (s onSet) script(withCgroup bool) string {
 			cgroups = append(cgroups, sel)
 		}
 	}
+	checks := labelChecks(cgroups)
 	if len(cgroups) > 0 {
 		b.WriteString("\tchain output {\n")
 		line("type filter hook output priority filter - 10; policy accept;")
+		for _, c := range checks {
+			// lo — без проверки: ответ локального сервиса доверенному идёт по той же записи conntrack от чужого сокета.
+			line(`oifname != "lo" ct label %d ct label %d jump %s`, c.l1, c.l2, c.chain())
+		}
 		for _, sel := range cgroups {
 			l1, l2 := cgroupLabel(sel)
 			for _, d := range sel.dests {
 				line("%s ct label set %d ct label set %d", join(sel.match, d), l1, l2)
 			}
 		}
+		b.WriteString("\t}\n\n")
+	}
+	for _, c := range checks {
+		fmt.Fprintf(&b, "\tchain %s {\n", c.chain())
+		for _, m := range c.matches {
+			line("%s return", m)
+		}
+		line("meta skuid >= 0 counter drop comment \"foreign socket\"")
 		b.WriteString("\t}\n\n")
 	}
 	b.WriteString("\tchain postrouting {\n")
@@ -291,7 +305,7 @@ func (s onSet) script(withCgroup bool) string {
 	line("udp sport 68 udp dport 67 accept")
 	line("udp sport 546 udp dport 547 accept")
 	line("icmpv6 type { nd-router-solicit, nd-neighbor-solicit, nd-neighbor-advert, packet-too-big, mld-listener-report, mld2-listener-report } accept")
-	line("meta l4proto { tcp, udp } th sport %d-%d goto %s comment \"check probes\"", probe.SrcPortFirst, probe.SrcPortLast, restChain)
+	line("meta l4proto { tcp, udp } th sport %d-%d goto %s comment \"check probes\"", probe.SrcPortFirst, probe.SrcPortLast, egressChain)
 	for _, sel := range sels {
 		match := sel.match
 		if sel.cgroup {
@@ -301,6 +315,12 @@ func (s onSet) script(withCgroup bool) string {
 		for _, d := range sel.dests {
 			line("%s accept", join(match, d))
 		}
+	}
+	line("goto %s", restChain)
+	b.WriteString("\t}\n\n")
+	fmt.Fprintf(&b, "\tchain %s {\n", egressChain)
+	for port := probe.SrcPortFirst; port <= probe.SrcPortLast; port++ {
+		line("meta l4proto { tcp, udp } th sport %d counter comment \"%s\"", port, egressComment(port))
 	}
 	line("goto %s", restChain)
 	b.WriteString("\t}\n\n")
@@ -334,7 +354,38 @@ func cgroupLabel(sel selector) (int, int) {
 	return 64 + int(sum%32), 96 + int((sum>>32)%32)
 }
 
+// labelCheck — цепочка проверки одной пары битов ct label. Метка живёт на записи conntrack, а не на сокете: без
+// проверки чужой процесс, занявший тот же 5-кортеж, прошёл бы по ней. Пакет соединения с этой меткой должен идти от
+// сокета одного из доверенных cgroup пары (`return`), иначе полный сокет отброшен (`meta skuid` есть только у полного
+// сокета; пакет без него — TIME_WAIT, RST/ACK ядра — проходит по метке, как раньше). Цепочка — на пару, а не на
+// селектор: селекторы с совпавшей парой иначе отбросили бы доверенных друг друга. `socket cgroupv2 … !=` не годится:
+// для сокета мельче уровня N выражение не вычисляется и правило не срабатывает.
+type labelCheck struct {
+	l1, l2  int
+	matches []string
+}
+
+func (c labelCheck) chain() string { return fmt.Sprintf("cgroup_%d_%d", c.l1, c.l2) }
+
+func labelChecks(cgroups []selector) []labelCheck {
+	var out []labelCheck
+	index := map[[2]int]int{}
+	for _, sel := range cgroups {
+		l1, l2 := cgroupLabel(sel)
+		i, ok := index[[2]int{l1, l2}]
+		if !ok {
+			i = len(out)
+			index[[2]int{l1, l2}] = i
+			out = append(out, labelCheck{l1: l1, l2: l2})
+		}
+		out[i].matches = dedup(append(out[i].matches, sel.match))
+	}
+	return out
+}
+
 func probeComment(port uint16) string { return fmt.Sprintf("probe %d", port) }
+
+func egressComment(port uint16) string { return fmt.Sprintf("egress %d", port) }
 
 func join(match, dest string) string {
 	if dest == "" {

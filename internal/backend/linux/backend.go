@@ -46,7 +46,7 @@ type Backend struct {
 	resolve    func(host string) ([]netip.Addr, error)
 
 	mu     sync.Mutex
-	before map[uint16]counterSnap // счётчик порта пробы до пробы (BeforeProbe)
+	before map[uint16]probeSnap // счётчики порта пробы до пробы (BeforeProbe)
 
 	watchOnce sync.Once
 	changes   chan struct{}
@@ -55,6 +55,7 @@ type Backend struct {
 var (
 	_ backend.Backend = (*Backend)(nil)
 	_ probe.Preparer  = (*Backend)(nil)
+	_ probe.Egress    = (*Backend)(nil)
 	_ backend.Watcher = (*Backend)(nil)
 )
 
@@ -64,7 +65,7 @@ func New() *Backend {
 }
 
 func newBackend(root string, run runner, self func() (string, error), systemd func() bool) *Backend {
-	return &Backend{run: run, root: root, self: self, systemd: systemd, before: map[uint16]counterSnap{},
+	return &Backend{run: run, root: root, self: self, systemd: systemd, before: map[uint16]probeSnap{},
 		ifaces: systemIfaces, lookupUser: systemLookupUser, resolve: systemResolve}
 }
 
@@ -348,20 +349,31 @@ func (f fact) details() string {
 		state(f.has(onFile)), state(f.has(units[0].file)), state(f.has(units[0].wants)))
 }
 
-// counterSnap — счётчик правила порта пробы; ok=false — цепочки отброса нет (off или таблица снята).
+// counterSnap — счётчик правила порта пробы; ok=false — цепочки нет (off, таблица снята, старый набор).
 type counterSnap struct {
 	n  uint64
 	ok bool
 }
 
-// BeforeProbe запоминает счётчик правила порта пробы (рев. 5: свидетельство — рост счётчика нашего drop).
+// probeSnap — до пробы: счётчики порта — отброс (deny) и выход на физический интерфейс (egress) — и handle таблицы
+// (0 — не прочитан).
+type probeSnap struct {
+	drop, egress counterSnap
+	table        uint64
+}
+
+// BeforeProbe запоминает счётчики порта пробы (рев. 5: свидетельство — рост счётчика нашего drop; ks-probe: признак
+// выхода — рост счётчика egress). Сбой чтения egress не мешает пробе: признака выхода тогда нет.
 func (b *Backend) BeforeProbe(id probe.ProbeID) error {
-	c, err := b.probeCount(id.Src.Port())
+	port := id.Src.Port()
+	handle, _ := b.tableHandle()
+	drop, err := b.probeCount(port, denyChain, probeComment(port))
 	if err != nil {
 		return err
 	}
+	egress, _ := b.probeCount(port, egressChain, egressComment(port))
 	b.mu.Lock()
-	b.before[id.Src.Port()] = c
+	b.before[port] = probeSnap{drop: drop, egress: egress, table: handle}
 	b.mu.Unlock()
 	return nil
 }
@@ -369,32 +381,91 @@ func (b *Backend) BeforeProbe(id probe.ProbeID) error {
 // Evidence: счётчик правила порта пробы вырос после BeforeProbe. Нет цепочки отброса — нет и свидетельства
 // (с ответом сервера ядро назовёт это утечкой). since не нужен — сравнение со снимком.
 func (b *Backend) Evidence(id probe.ProbeID, _ time.Time) (bool, error) {
-	port := id.Src.Port()
-	b.mu.Lock()
-	before, ok := b.before[port]
-	delete(b.before, port)
-	b.mu.Unlock()
-	if !ok {
-		return false, fmt.Errorf("нет снимка счётчика порта %d до пробы", port)
-	}
-	now, err := b.probeCount(port)
+	before, err := b.takeSnap(id)
 	if err != nil {
 		return false, err
 	}
-	return before.ok && now.ok && now.n > before.n, nil
+	now, err := b.probeCount(id.Src.Port(), denyChain, probeComment(id.Src.Port()))
+	if err != nil {
+		return false, err
+	}
+	return before.drop.ok && now.ok && now.n > before.drop.n, nil
 }
 
-func (b *Backend) probeCount(port uint16) (counterSnap, error) {
+// Egressed: ушёл ли пакет пробы через физический интерфейс — вырос ли счётчик egress порта. «Не ушёл» — только если
+// счётчик был и до, и после пробы в одной и той же таблице (handle ядра растёт с каждым пересозданием: снятая и
+// возвращённая таблица начинает счёт с нуля) и не изменился; иначе — ошибка: признака нет.
+func (b *Backend) Egressed(id probe.ProbeID) (bool, error) {
+	before, err := b.takeSnap(id)
+	if err != nil {
+		return false, err
+	}
+	now, err := b.probeCount(id.Src.Port(), egressChain, egressComment(id.Src.Port()))
+	if err != nil {
+		return false, err
+	}
+	handle, herr := b.tableHandle()
+	switch {
+	case !before.egress.ok || !now.ok:
+		return false, fmt.Errorf("нет счётчика выхода порта %d", id.Src.Port())
+	case herr != nil || before.table == 0 || handle != before.table:
+		return false, fmt.Errorf("таблица пересоздана во время пробы порта %d (handle %d → %d, %v)", id.Src.Port(), before.table, handle, herr)
+	case now.n < before.egress.n:
+		return false, fmt.Errorf("счётчик выхода порта %d сброшен во время пробы", id.Src.Port())
+	}
+	return now.n > before.egress.n, nil
+}
+
+// tableHandle — handle своей таблицы в ядре (`nft -j list tables`); 0 — таблицы нет.
+func (b *Backend) tableHandle() (uint64, error) {
+	out, err := b.run("", "nft", "-j", "list", "tables")
+	if err != nil {
+		return 0, err
+	}
+	var doc struct {
+		Nftables []struct {
+			Table *struct {
+				Family string `json:"family"`
+				Name   string `json:"name"`
+				Handle uint64 `json:"handle"`
+			} `json:"table"`
+		} `json:"nftables"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		return 0, fmt.Errorf("таблицы nft: %w", err)
+	}
+	for _, item := range doc.Nftables {
+		if t := item.Table; t != nil && t.Family == "inet" && t.Name == table {
+			return t.Handle, nil
+		}
+	}
+	return 0, nil
+}
+
+func (b *Backend) takeSnap(id probe.ProbeID) (probeSnap, error) {
+	port := id.Src.Port()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	before, ok := b.before[port]
+	delete(b.before, port)
+	if !ok {
+		return probeSnap{}, fmt.Errorf("нет снимка счётчика порта %d до пробы", port)
+	}
+	return before, nil
+}
+
+// probeCount — счётчик правила с комментарием comment в цепочке chain; нет цепочки — ok=false без ошибки.
+func (b *Backend) probeCount(port uint16, chain, comment string) (counterSnap, error) {
 	if port < probe.SrcPortFirst || port > probe.SrcPortLast {
 		return counterSnap{}, fmt.Errorf("порт %d вне диапазона проб", port)
 	}
-	out, err := b.run("", "nft", "-j", "list", "chain", "inet", table, denyChain)
+	out, err := b.run("", "nft", "-j", "list", "chain", "inet", table, chain)
 	if err != nil {
 		present, listing, terr := b.readTable()
 		if terr != nil {
 			return counterSnap{}, terr
 		}
-		if !present || !strings.Contains(listing, "chain "+denyChain+" {") {
+		if !present || !strings.Contains(listing, "chain "+chain+" {") {
 			return counterSnap{}, nil
 		}
 		return counterSnap{}, fmt.Errorf("счётчики: %w", err)
@@ -415,7 +486,7 @@ func (b *Backend) probeCount(port uint16) (counterSnap, error) {
 		return counterSnap{}, fmt.Errorf("счётчики: %w", err)
 	}
 	for _, item := range doc.Nftables {
-		if item.Rule == nil || item.Rule.Comment != probeComment(port) {
+		if item.Rule == nil || item.Rule.Comment != comment {
 			continue
 		}
 		for _, e := range item.Rule.Expr {
@@ -424,7 +495,7 @@ func (b *Backend) probeCount(port uint16) (counterSnap, error) {
 			}
 		}
 	}
-	return counterSnap{}, fmt.Errorf("нет правила пробы порта %d", port)
+	return counterSnap{}, fmt.Errorf("нет правила %q в цепочке %s", comment, chain)
 }
 
 // writeFile — атомарно: временный файл, fsync, rename.

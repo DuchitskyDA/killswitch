@@ -1,6 +1,6 @@
 //go:build windows && wfplive
 
-// Живые тесты WFP: только на одноразовом раннере GitHub Actions (workflow smoke-windows), никогда на рабочей машине.
+// Живые тесты WFP: только на одноразовом раннере GitHub Actions (workflow ci, job live-windows), никогда на рабочей машине.
 // Сборка: go test -tags wfplive -c; запуск — отдельными шагами workflow с -test.run.
 package windows
 

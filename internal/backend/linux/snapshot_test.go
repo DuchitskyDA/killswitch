@@ -118,3 +118,68 @@ func TestSnapshotRequiresBootID(t *testing.T) {
 		t.Fatal("снимок без boot id")
 	}
 }
+
+// withDefaults — ответы `ip -4|-6 -j route show default table all`.
+func withDefaults(b *Backend, v4, v6 string) *Backend {
+	inner := b.run
+	b.run = func(stdin, name string, args ...string) (string, error) {
+		switch name + " " + strings.Join(args, " ") {
+		case "ip -4 -j route show default table all":
+			return v4, nil
+		case "ip -6 -j route show default table all":
+			return v6, nil
+		}
+		return inner(stdin, name, args...)
+	}
+	b.ifaces = func() ([]env.Iface, error) {
+		return []env.Iface{{Name: "lo", Index: 1, Up: true}, {Name: "eth0", Index: 2, Up: true},
+			{Name: "wg0", Index: 3, Up: true}, {Name: "docker0", Index: 4, Up: true}}, nil
+	}
+	return b
+}
+
+func defaultsOf(e env.Env) map[string][2]bool {
+	out := map[string][2]bool{}
+	for _, i := range e.Ifaces {
+		out[i.Name] = [2]bool{i.DefaultRoute4, i.DefaultRoute6}
+	}
+	return out
+}
+
+// (в) Маршрут по умолчанию — по интерфейсу и семейству, из всех таблиц; multipath — по nexthops; unreachable — нет.
+func TestSnapshotDefaultRoutesPerFamily(t *testing.T) {
+	v4 := `[{"dst":"default","gateway":"192.0.2.1","dev":"eth0","flags":[]},{"dst":"default","dev":"wg0","table":"51820","flags":[]}]`
+	v6 := `[{"type":"unreachable","dst":"default","dev":"lo","table":"main","flags":[]},` +
+		`{"dst":"default","table":"main","nexthops":[{"gateway":"fe80::1","dev":"eth0","weight":1,"flags":[]}],"flags":[]}]`
+	e, err := withDefaults(snapBackend(t, nil), v4, v6).Snapshot(snapPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := defaultsOf(e)
+	if got["eth0"] != [2]bool{true, true} || got["docker0"] != [2]bool{false, false} || got["lo"] != [2]bool{false, false} {
+		t.Fatalf("маршруты по умолчанию: %v", got)
+	}
+}
+
+// Таблицу маршрутов не прочитать — физические интерфейсы считаются с маршрутом (как до ks-probe: пробы идут).
+func TestSnapshotDefaultRoutesUnreadableAssumesRoute(t *testing.T) {
+	e, err := snapBackend(t, nil).Snapshot(snapPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := defaultsOf(e); got["eth0"] != [2]bool{true, true} {
+		t.Fatalf("маршруты по умолчанию без ip: %v", got)
+	}
+}
+
+func TestSnapshotRoutesIncludeCheckTargets(t *testing.T) {
+	p := snapPolicy()
+	p.Check.Targets = []netip.Addr{netip.MustParseAddr("203.0.113.130")}
+	e, err := snapBackend(t, map[string]string{"203.0.113.130": "wg0"}).Snapshot(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := e.Routes[netip.MustParseAddr("203.0.113.130")]; r != (env.Route{IfaceIndex: 3, ViaTunnel: true}) {
+		t.Fatalf("маршрут к цели check = %+v", r)
+	}
+}

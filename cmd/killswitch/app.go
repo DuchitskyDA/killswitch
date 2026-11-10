@@ -29,6 +29,7 @@ const (
 )
 
 const usage = `использование: killswitch [-config путь] <команда>
+  (без команды в терминале — меню)
   on | off | repair     включить, выключить до перезагрузки, repair (Windows) до перезагрузки
   status                состояние; код 4 — структурная утечка
   check                 пробы утечки; 0 — блок, 4 — утечка, 5 — нет уверенности
@@ -48,6 +49,12 @@ type deps struct {
 	profiles fs.FS
 	glob     func(pattern string) ([]string, error)
 	prober   func(b backend.Backend) probe.Prober
+	// Меню (killswitch без аргументов): ввод, терминал ли stdin/stdout, права администратора,
+	// перезапуск с повышением (nil — ОС без повышения: нужен sudo).
+	in       io.Reader
+	terminal func() bool
+	admin    func() bool
+	elevate  func() error
 }
 
 type app struct {
@@ -73,12 +80,19 @@ func run(ctx context.Context, args []string, d deps) int {
 	fsFlags := flag.NewFlagSet("killswitch", flag.ContinueOnError)
 	fsFlags.SetOutput(d.err)
 	configPath := fsFlags.String("config", filepath.Join(d.dir, "config.toml"), "путь к config.toml")
+	if len(args) == 0 && d.terminal != nil && d.terminal() {
+		return exitCode(d, (&app{d: d, configPath: *configPath}).menu(ctx))
+	}
 	if err := fsFlags.Parse(args); err != nil || fsFlags.NArg() == 0 {
 		fmt.Fprintln(d.err, usage)
 		return exitConfig
 	}
 	a := &app{d: d, configPath: *configPath}
-	err := a.dispatch(ctx, fsFlags.Arg(0), fsFlags.Args()[1:])
+	return exitCode(d, a.dispatch(ctx, fsFlags.Arg(0), fsFlags.Args()[1:]))
+}
+
+// exitCode печатает ошибку и возвращает код выхода.
+func exitCode(d deps, err error) int {
 	var ce cliError
 	switch {
 	case err == nil:

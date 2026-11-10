@@ -7,8 +7,9 @@ import "net/netip"
 const (
 	ClientNS = "ksl-client"
 	WanNS    = "ksl-wan"
-	VPNNS    = "ksl-vpn"
+	PeerNS   = "ksl-peer"
 	InetNS   = "ksl-inet"
+	MountNS  = "ksl-mnt" // пустой netns держателя mount ns приёмки: kslab cleanup гасит его вместе с прочими
 
 	PhysIf    = "c0" // физический интерфейс клиента
 	CaptureIf = "wc" // сторона маршрутизатора на линии клиента — точка захвата
@@ -29,6 +30,9 @@ const (
 	PhysMetric    = "100"
 	ProxyMethod   = "2022-blake3-aes-128-gcm"
 	ServeReadyMsg = `{"ready":true}`
+	NobodyUID     = 65534  // от него идут пробы «программы»: профили доверяют root
+	BypassUID     = 65533  // «программа» мимо туннеля при sing-box auto_redirect: exclude_uid клиента, иначе redirect перехватит прямую пробу
+	WGMark        = 0xca6c // fwmark транспорта WireGuard, как у wg-quick (профиль wireguard доверяет ей)
 )
 
 var (
@@ -37,8 +41,8 @@ var (
 	WanCV4   = netip.MustParseAddr("198.51.100.1")
 	WanCV6   = netip.MustParseAddr("2001:db8:c::1")
 
-	VPNV4  = netip.MustParseAddr("203.0.113.2")
-	VPNV6  = netip.MustParseAddr("2001:db8:a::2")
+	PeerV4 = netip.MustParseAddr("203.0.113.2")
+	PeerV6 = netip.MustParseAddr("2001:db8:a::2")
 	WanVV4 = netip.MustParseAddr("203.0.113.1")
 	WanVV6 = netip.MustParseAddr("2001:db8:a::1")
 
@@ -66,4 +70,26 @@ func Inet(family int) netip.Addr {
 		return InetV6
 	}
 	return InetV4
+}
+
+// LAN на линии клиента (c0 ↔ wc): RFC1918 и ULA — диапазоны LAN Policy. HTTP и DNS «LAN-хоста» слушает ksl-wan.
+var (
+	LanClientV4 = netip.MustParseAddr("192.168.77.2")
+	LanHostV4   = netip.MustParseAddr("192.168.77.1")
+	LanClientV6 = netip.MustParseAddr("fd77::2")
+	LanHostV6   = netip.MustParseAddr("fd77::1")
+)
+
+// IsClientLAN — LAN-адрес клиента.
+func IsClientLAN(a netip.Addr) bool {
+	a = a.Unmap()
+	return a == LanClientV4 || a == LanClientV6
+}
+
+// Lan возвращает адрес LAN-хоста нужного семейства.
+func Lan(family int) netip.Addr {
+	if family == 6 {
+		return LanHostV6
+	}
+	return LanHostV4
 }

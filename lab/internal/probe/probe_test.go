@@ -65,3 +65,25 @@ func freePort(t *testing.T) uint16 {
 	u.Close()
 	return p
 }
+
+// Фиксированный порт-источник доходит до сервера: на нём держится проверка повторного 5-кортежа UDP.
+func TestProbeSrcPort(t *testing.T) {
+	lo := netip.MustParseAddr("127.0.0.1")
+	srv, err := net.ListenUDP("udp4", &net.UDPAddr{IP: lo.AsSlice()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	go func() {
+		buf := make([]byte, 64)
+		_, from, err := srv.ReadFromUDPAddrPort(buf)
+		if err == nil {
+			srv.WriteToUDPAddrPort([]byte(fmt.Sprintf("src=%d\n", from.Port())), from)
+		}
+	}()
+	sport := freePort(t)
+	r := Run(Spec{Kind: UDP, Dst: lo, Port: uint16(srv.LocalAddr().(*net.UDPAddr).Port), SrcPort: sport, Timeout: time.Second})
+	if !r.OK || r.Echo != fmt.Sprint(sport) {
+		t.Fatalf("порт-источник %d, сервер увидел %+v", sport, r)
+	}
+}
