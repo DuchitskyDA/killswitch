@@ -6,7 +6,7 @@
 
 English summary — [в конце](#english).
 
-Готового релиза пока нет: бинарник собирается из исходников или берётся из артефактов CI (см. «Установка»).
+Готовые сборки — на странице [Releases](https://github.com/DuchitskyDA/killswitch/releases); можно собрать и из исходников (см. «Установка»).
 
 ## Содержание
 
@@ -74,7 +74,18 @@ macOS — LaunchDaemon. Он пересчитывает правила раз в
 
 ## Установка
 
-Нужен Go 1.26 или новее. Сборка из исходников:
+**Готовые сборки.** На странице [Releases](https://github.com/DuchitskyDA/killswitch/releases) у каждого выпуска лежат пять бинарников, `menu.ps1` и
+`SHA256SUMS`. Скачайте файл своей ОС — `killswitch-<ос>-<арх>` — и `SHA256SUMS`, сверьте сумму:
+
+- Linux: `sha256sum -c --ignore-missing SHA256SUMS`;
+- macOS: `shasum -a 256 killswitch-darwin-arm64` (на Intel — `killswitch-darwin-amd64`) — строка должна совпасть со
+  строкой этого файла в `SHA256SUMS`;
+- Windows (PowerShell): `(Get-FileHash .\killswitch-windows-amd64.exe -Algorithm SHA256).Hash` — значение должно
+  совпасть без учёта регистра с суммой этого файла в `SHA256SUMS`; так же сверьте `menu.ps1`.
+
+Перед установкой переименуйте файл в `killswitch` (`killswitch.exe`).
+
+**Сборка из исходников.** Нужен Go 1.26 или новее:
 
 ```sh
 git clone https://github.com/DuchitskyDA/killswitch
@@ -85,10 +96,9 @@ go build -o killswitch ./cmd/killswitch        # на Windows: -o killswitch.exe
 Под другую ОС — как в CI: `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -o killswitch.exe ./cmd/killswitch`.
 Поддержаны linux/amd64, linux/arm64, darwin/arm64, darwin/amd64 и windows/amd64.
 
-**Артефакты CI.** Каждый прогон workflow `ci` собирает пять бинарников, `menu.ps1` и `SHA256SUMS`. Они лежат в артефакте
-`killswitch-<коммит>` на странице прогона во вкладке Actions (скачать может только вошедший в GitHub). Сверьте суммы:
-`sha256sum -c SHA256SUMS`. Файлы называются `killswitch-<ос>-<арх>`. Перед установкой переименуйте свой в
-`killswitch` (`killswitch.exe`).
+**Артефакты CI.** Сборку любого коммита можно взять из CI: каждый прогон workflow `ci` собирает те же пять бинарников, `menu.ps1` и `SHA256SUMS`. Они лежат в артефакте
+`killswitch-<коммит>` на странице прогона во вкладке Actions (скачать может только вошедший в GitHub). Суммы сверяются
+так же, как у готовых сборок.
 
 Защиту включает `on`: из окна, из меню («Включить защиту») или командой. Перед этим проверьте, что профиль или
 `[[trust]]` доверяет клиенту туннеля. Иначе клиент не дойдёт до своего сервера, и выхода в сеть не будет совсем.
@@ -703,7 +713,7 @@ killswitch is a tunnel kill switch. While it is on, programs reach the network o
 drops, there is no way around it. One Go binary for Windows (WFP), macOS (pf) and Linux (nftables). One policy for all
 three OSes; tunnel clients are data profiles (`profiles/*.toml`).
 
-There is no release yet. Build from source with Go 1.26+:
+Prebuilt binaries, `menu.ps1` and `SHA256SUMS` are on the [Releases](https://github.com/DuchitskyDA/killswitch/releases) page. Or build from source with Go 1.26+:
 
 ```sh
 git clone https://github.com/DuchitskyDA/killswitch
