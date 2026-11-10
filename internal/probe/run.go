@@ -2,6 +2,7 @@ package probe
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"time"
@@ -130,24 +131,40 @@ func (r *runner) direct(s Service, dst netip.Addr, phys env.Iface, baseline stri
 	if baseline != "" {
 		return Inconclusive, baseline
 	}
-	id := ProbeID{Proto: s.Proto, Src: netip.AddrPortFrom(src, r.nextPort()), Dst: netip.AddrPortFrom(dst, s.Port),
-		Iface: phys.Name, At: r.now()}
+	// Порт занят соединением прошлой проверки, которое ещё закрывается: проба уходит со следующего порта.
+	for attempt := 1; ; attempt++ {
+		id := ProbeID{Proto: s.Proto, Src: netip.AddrPortFrom(src, r.nextPort()), Dst: netip.AddrPortFrom(dst, s.Port),
+			Iface: phys.Name, At: r.now()}
+		class, detail, busy := r.send(s, id, phys, silent)
+		if !busy || attempt == srcPortAttempts {
+			return class, detail
+		}
+	}
+}
+
+// srcPortAttempts — сколько портов-источников пробует одна проба, пока порт занят.
+const srcPortAttempts = 8
+
+// send — одна попытка пробы с портом-источником id.Src; busy — порт занят, проба не уходила.
+func (r *runner) send(s Service, id ProbeID, phys env.Iface, silent func(ProbeID) (Class, string)) (class Class, detail string, busy bool) {
 	if fin, ok := r.ev.(Finisher); ok {
 		defer fin.AfterProbe(id)
 	}
 	if prep, ok := r.ev.(Preparer); ok {
 		if err := prep.BeforeProbe(id); err != nil {
-			return Inconclusive, "свидетельство не подготовлено: " + err.Error()
+			return Inconclusive, "свидетельство не подготовлено: " + err.Error(), false
 		}
 	}
 	answered, err := r.p.Direct(r.ctx, s, id, phys)
 	if err != nil {
-		return Inconclusive, "проба не отправлена: " + err.Error()
+		return Inconclusive, "проба не отправлена: " + err.Error(), errors.Is(err, ErrSourcePortBusy)
 	}
 	if answered {
-		return r.answered(id)
+		class, detail = r.answered(id)
+		return class, detail, false
 	}
-	return silent(id)
+	class, detail = silent(id)
+	return class, detail, false
 }
 
 // dropped — молчание сервера в полной проверке: BLOCKED только со свидетельством отброса нашим правилом.

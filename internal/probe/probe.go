@@ -2,6 +2,7 @@
 package probe
 
 import (
+	"errors"
 	"net/netip"
 	"time"
 )
@@ -41,6 +42,10 @@ type CheckResult struct {
 	// Simple — своих целей нет, шла простая проверка: только HTTP к SimpleHost.
 	Simple bool
 }
+
+// ErrSourcePortBusy — порт-источник пробы занят (обычно соединением недавней проверки): проба не уходила,
+// её можно повторить с другого порта.
+var ErrSourcePortBusy = errors.New("порт-источник пробы занят")
 
 // ProbeID — 5-кортеж и время пробы: по нему backend ищет свидетельство отброса своим правилом.
 type ProbeID struct {
