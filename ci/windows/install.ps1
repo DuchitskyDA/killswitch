@@ -1,7 +1,8 @@
 # Установка killswitch.exe на одноразовом раннере windows-2025 (ci.yml, live-windows): отказ на каталоге настроек,
 # в который может писать не администратор, и на ссылке вместо каталога; чистая установка без настроек (служба,
-# ярлык, точные права каталогов, запись в «Приложения»), повторная установка с обновлением копии и полное удаление
-# командой из «Приложений». Двойной клик без окна не повторить: killswitch.exe install — та же установка без окна.
+# ярлык, точные права каталогов, запись в «Приложения»), повторная установка с обновлением копии и без смены
+# записанного режима, полное удаление командой из «Приложений» с настройками на месте. Двойной клик без окна
+# не повторить: killswitch.exe install — та же установка без окна.
 . "$PSScriptRoot\lib.ps1"
 $State = "$env:ProgramData\killswitch"
 $InstallDir = "$env:ProgramFiles\killswitch"
@@ -31,6 +32,8 @@ function Acl-Exact($dir) {
     return ($owner -eq $Admins) -and $acl.AreAccessRulesProtected -and (($sids -join ',') -eq 'S-1-5-18,S-1-5-32-544,S-1-5-32-545')
 }
 function Same-Hash($a, $b) { (Get-FileHash -LiteralPath $a).Hash -eq (Get-FileHash -LiteralPath $b).Hash }
+# Записанный режим из state.json; нет файла или не читается — пусто.
+function State-Mode { try { (Get-Content -Raw -LiteralPath (Join-Path $State 'state.json') | ConvertFrom-Json).mode } catch { '' } }
 
 # I1: каталог настроек создан заранее с правами ProgramData (пользователи могут создавать в нём файлы) и с настройками.
 Reset-State
@@ -88,6 +91,13 @@ Check 'I4.update' ($KsCode -eq 0 -and (Same-Hash $KsExe $InstalledExe)) "code=$K
 Check 'I4.service-running' ((Get-Service killswitch -ErrorAction SilentlyContinue).Status -eq 'Running') 'служба запущена после обновления'
 Run-Ks $InstalledExe @('install')
 Check 'I4.self' ($KsCode -eq 0) "установленная копия ставит сама себя: code=$KsCode"
+# Записанный режим повторная установка не меняет: on — только при первой установке (в state.json режима нет).
+Write-Config
+Run-Ks $InstalledExe @('off')
+Check 'I4.off' ($KsCode -eq 0) "off: code=$KsCode"
+Run-Ks $KsExe @('install')
+$mode = State-Mode
+Check 'I4.mode-kept' ($KsCode -eq 0 -and $mode -eq 'off') "code=$KsCode режим после установки '$mode' (ждали off)"
 
 # I5: удаление командой из «Приложений» дословно (как её запускает Windows) — запущен сам установленный exe.
 $uninstall = (Get-ItemProperty -LiteralPath $AppKey).UninstallString
@@ -105,5 +115,6 @@ Check 'I5.no-shortcut' (-not (Test-Path -LiteralPath $Shortcut)) 'ярлык у�
 Check 'I5.no-app' (-not (App-Exists)) 'записи в «Приложениях» нет'
 $s = Wait-For 30 { -not (Test-Path -LiteralPath $InstallDir) }
 Check 'I5.no-files' ($s -ge 0) "каталог установки удалён через $s с"
-Check 'I5.settings-kept' (Test-Path -LiteralPath $State) 'настройки и журнал остаются'
+# config.toml записан в I4 (Write-Config): без него проверять нечего.
+Check 'I5.settings-kept' (Test-Path -LiteralPath (Join-Path $State 'config.toml')) "настройки остаются: $State\config.toml"
 Finish

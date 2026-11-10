@@ -85,6 +85,54 @@ func TestInstallWithoutSettingsLeavesProtectionOff(t *testing.T) {
 	eq(t, len(h.fb.Applies), 0)
 }
 
+// Повторная установка (обновление, второй двойной клик) режим не меняет: on — только при первой установке.
+func TestReinstallKeepsRecordedMode(t *testing.T) {
+	h := newHarness(t, baseConfig)
+	eq(t, h.run("off"), exitOK)
+	applies := len(h.fb.Applies)
+	var steps []string
+	d := h.setupDeps(&steps, func(string) error { t.Error("install открыл окно"); return nil })
+	eq(t, run(context.Background(), []string{"install"}, d), exitOK)
+	eq(t, steps, []string{"install"})
+	eq(t, len(h.fb.Applies), applies)
+	eq(t, h.state().Mode, policy.ModeOff)
+}
+
+func TestInstallOverCorruptStateTurnsProtectionOn(t *testing.T) {
+	h := newHarness(t, baseConfig)
+	h.writeState(`{"gen": 3, "mode": "off", broken`)
+	var steps []string
+	d := h.setupDeps(&steps, func(string) error { return nil })
+	eq(t, run(context.Background(), []string{"install"}, d), exitOK)
+	eq(t, h.installedMode(), policy.ModeOn)
+}
+
+func TestReinstallWithForeignConfigAdoptsItAndKeepsMode(t *testing.T) {
+	h := newHarness(t, baseConfig)
+	eq(t, h.run("off"), exitOK)
+	chosen := "lan = false\n" + baseConfig
+	other := filepath.Join(t.TempDir(), "chosen.toml")
+	noErr(t, os.WriteFile(other, []byte(chosen), 0o600))
+	var steps []string
+	d := h.setupDeps(&steps, func(string) error { return nil })
+	eq(t, run(context.Background(), []string{"-config", other, "install"}, d), exitOK)
+	eq(t, h.config(), chosen)
+	eq(t, h.state().Mode, policy.ModeOff)
+}
+
+// Незавершённый переход (сбой между Apply и фиксацией) чужой -config не отменяет: доводится до цели намерения.
+func TestReinstallWithForeignConfigFinishesPendingIntent(t *testing.T) {
+	h := newHarness(t, baseConfig)
+	h.writeState(`{"gen": 1, "mode": "off", "boot_id": "boot-1", "plan_hash": "", "applied_hash": "",
+		"anchor_ok": false, "intent": {"gen": 2, "target": "on", "plan_hash": "x"}, "updated_at": "2026-11-09T12:00:00Z"}`)
+	other := filepath.Join(t.TempDir(), "chosen.toml")
+	noErr(t, os.WriteFile(other, []byte(baseConfig), 0o600))
+	var steps []string
+	d := h.setupDeps(&steps, func(string) error { return nil })
+	eq(t, run(context.Background(), []string{"-config", other, "install"}, d), exitOK)
+	eq(t, h.state().Mode, policy.ModeOn)
+}
+
 func TestInstallBrokenSettingsFailsInstall(t *testing.T) {
 	h := newHarness(t, "lan = ")
 	var steps []string
