@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
+<!-- Вилка E для 20 px (Windows): плитка во весь холст, детали по пиксельной сетке. Исходник — icon.svg. -->
+<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#24313f"/><stop offset="1" stop-color="#111922"/></linearGradient></defs>
+<rect width="20" height="20" rx="4.5" fill="url(#g)"/>
+<rect x="7" y="3" width="2" height="5" rx=".5" fill="#fff"/>
+<rect x="11" y="3" width="2" height="5" rx=".5" fill="#fff"/>
+<path d="M5 7 H15 V10 C15 12.4 13.2 14 11 14.3 V15 H9 V14.3 C6.8 14 5 12.4 5 10 Z" fill="#2fbf98"/>
+<path d="M10 14.5 V15.6 C10 17 11 17.6 12.3 17.6" fill="none" stroke="#2fbf98" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

@@ -10,6 +10,9 @@ trap 'rm -rf "$work"' EXIT
 app="$work/killswitch.app"
 mkdir -p "$app/Contents/MacOS"
 install -m 0755 "$bin" "$app/Contents/MacOS/killswitch"
+# Значок (CFBundleIconFile): до codesign — Resources входит в печать подписи.
+mkdir -p "$app/Contents/Resources"
+install -m 0644 "$root/dist/icon/killswitch.icns" "$app/Contents/Resources/killswitch.icns"
 sed "s/@VERSION@/$version/g" "$root/dist/macos/Info.plist" > "$app/Contents/Info.plist"
 plutil -lint "$app/Contents/Info.plist"
 # Подпись линкера Go не связывает Info.plist с исполняемым файлом: ad-hoc подпись всего бандла (без сертификата).

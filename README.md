@@ -199,6 +199,10 @@ go build -o killswitch ./cmd/killswitch        # на Windows: -o killswitch.exe
 Поддержаны linux/amd64, linux/arm64, darwin/arm64, darwin/amd64 и windows/amd64. `killswitch.app` собирает
 `ci/darwin/app.sh` (только на macOS).
 
+**Иконка.** Исходник — `dist/icon/icon.svg`; готовые `.ico`, `.icns`, ресурс exe (`cmd/killswitch/rsrc_windows_amd64.syso`)
+и значок окна (`web/src/favicon.ico`) лежат в репозитории, сборка их не создаёт. После правки svg: `sh dist/icon/render.sh`
+(нужен resvg 0.45) и `cd dist/icon/gen && go run .`, затем пересоберите страницу окна (см. «Окно»).
+
 **Артефакты CI.** Сборку любого коммита можно взять из CI: каждый прогон workflow `ci` собирает те же файлы, что лежат
 в выпуске. Они лежат в артефакте `killswitch-<коммит>` на странице прогона во вкладке Actions (скачать может только
 вошедший в GitHub). Суммы сверяются так же, как у готовых сборок.
