@@ -503,6 +503,7 @@ names = ["node"]              # по имени: файлы программы �
 | Профиль | Windows | Linux | macOS |
 |---|---|---|---|
 | `amneziawg` | адаптер `WireGuard Tunnel*`, `amneziawg.exe` | `awg*`, метка 0xca6c | `utun*`, root |
+| `clash-verge` | `Meta`, `Mihomo`, exe каталога Clash Verge | `Meta`, `Mihomo`, `utun*`, `tun*`, root | `utun*`, root |
 | `happ` | `happ-xray`, `happ-tun`, `happ-default-tun`, exe каталога Happ | `happ-xray`, `happ-tun`, `happ-wg`, root | `utun*`, root |
 | `hiddify` | `HiddifyAdminBg`, `sing-tun Tunnel*`, exe каталога Hiddify | `HiddifyAdminBg`, `tun*`, root | `utun*`, root |
 | `openvpn` | `OpenVPN TAP-Windows6`, `OpenVPN Data Channel Offload` (и с суффиксом ` #N`), `openvpn.exe` | `tun*`, root | `utun*`, root |
@@ -705,7 +706,7 @@ Linux — лаборатория в network namespace на удалённом Li
 | sing-box 1.14.4, `auto_redirect` | PASS, кроме `tunnel-up` и `check` (см. ограничения) | — | — |
 | xray 26.10.21 | PASS, свой TUN, доверие по cgroup, без профиля | — | — |
 | OpenVPN, ovpn-dco | не проверено | не проверено | не проверено |
-| AmneziaWG, Happ, Hiddify, v2rayN | не проверено | не проверено | не проверено |
+| AmneziaWG, Clash Verge Rev, Happ, Hiddify, v2rayN | не проверено | не проверено | не проверено |
 
 Не проверено нигде: холодная загрузка ОС; порядок подслоёв WFP после перезагрузки; macOS с включённым SIP; IPv6 на
 Windows (у раннера нет маршрута ::/0); OpenVPN, ovpn-dco; utun настоящих клиентов на macOS.
