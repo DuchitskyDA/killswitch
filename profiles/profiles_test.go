@@ -9,7 +9,7 @@ import (
 	"github.com/DuchitskyDA/killswitch/profiles"
 )
 
-var clients = []string{"happ", "v2rayn", "sing-box", "hiddify", "wireguard", "amneziawg", "openvpn"}
+var clients = []string{"happ", "v2rayn", "sing-box", "hiddify", "wireguard", "amneziawg", "openvpn", "clash-verge"}
 
 func loadAll(t *testing.T) map[string]profile.Profile {
 	t.Helper()

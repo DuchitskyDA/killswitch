@@ -1,0 +1,25 @@
+# Clash Verge Rev: адаптеры Meta/Mihomo, ядро verge-mihomo.
+name = "clash-verge"
+description = "Clash Verge Rev: адаптеры Meta/Mihomo, ядро verge-mihomo"
+
+# Живые проверки; пусто — профиль не проверен.
+verified_on = []
+
+[windows]
+interfaces = ["Meta", "Mihomo"]
+programs = [
+  'C:\Program Files\Clash Verge\*.exe',
+  'C:\Program Files\Clash Verge\*\*.exe',
+]
+detect = ['C:\Program Files\Clash Verge\clash-verge.exe']
+
+[linux]
+interfaces = ["Meta", "Mihomo", "utun*", "tun*"]
+users = ["root"]
+detect = ["/usr/bin/clash-verge", "/opt/clash-verge/clash-verge"]
+
+[darwin]
+# Имя utun назначает ядро macOS; совпадут и системные utun.
+interfaces = ["utun*"]
+users = ["root"]
+detect = ["/Applications/Clash Verge.app"]
