@@ -10,6 +10,8 @@ interfaces = ["Meta", "Mihomo"]
 programs = [
   'C:\Program Files\Clash Verge\*.exe',
   'C:\Program Files\Clash Verge\*\*.exe',
+  'C:\ProgramData\clash-verge-service\*.exe',
+  'C:\ProgramData\clash-verge-service\*\*.exe',
 ]
 detect = ['C:\Program Files\Clash Verge\clash-verge.exe']
 
